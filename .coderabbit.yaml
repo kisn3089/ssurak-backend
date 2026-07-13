@@ -1,0 +1,175 @@
+language: ko-KR
+tone_instructions: |
+  - Use Korean with "존댓말".
+  - Keep technical terms in English.
+  - Write concise, clear sentences.
+  - Use bullet points for clarity.
+  - Include readable code snippets when needed.
+  - Focus on clarity, maintainability, and best practices in feedback.
+early_access: true
+enable_free_tier: true
+reviews:
+  profile: chill
+  request_changes_workflow: true
+  high_level_summary: true
+  high_level_summary_placeholder: "/summary"
+  high_level_summary_in_walkthrough: false
+  auto_title_placeholder: "/title"
+  auto_title_instructions: |
+    Max length: 72
+    Format: `kind: Begin with capitalized infinitive verb, use English, no period`
+    kind: Workspace name (ssurak-api, db, schema) in lowercase, or "chore" for chores.
+    Use abbr/&, drop articles if can make ≤72.
+  review_status: true
+  commit_status: true
+  fail_commit_status: false
+  collapse_walkthrough: false
+  changed_files_summary: true
+  sequence_diagrams: false
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  suggested_labels: true
+  auto_apply_labels: true
+  suggested_reviewers: true
+  poem: true
+  labeling_instructions:
+    - label: feat
+      instructions: 새로운 기능 추가나 기존 기능 개선 관련 PR
+    - label: bug
+      instructions: 버그 수정 관련 PR
+    - label: docs
+      instructions: 문서화 변경 관련 PR
+    - label: fix
+      instructions: 버그 수정 관련 PR
+    - label: hotfix
+      instructions: 긴급한 버그 수정 관련 PR
+    - label: refactor
+      instructions: 코드 리팩토링 관련 PR
+    - label: ssurak-api
+      instructions: ssurak-api (NestJS API) 관련 PR
+    - label: db
+      instructions: db 패키지(Prisma 스키마·마이그레이션·시드) 관련 PR
+    - label: schema
+      instructions: packages/schema (zod 스키마) 관련 PR
+    - label: docker
+      instructions: Dockerfile, docker-compose 관련 PR
+  path_filters: []
+  path_instructions:
+    - path: "**/*"
+      instructions: |
+        - Review for any grammatical errors or typos and provide change suggestions.
+    - path: "{db,packages,ssurak-api}/**/*.{js,ts,mts}"
+      instructions: |
+        Perform a review of the provided code with following key aspects in mind:
+        - Detect and flag instances where non-intuitive acronyms are arbitrarily used in type, function, method, or variable names during code reviews.
+        - Flag type assertions (`as`) — this codebase forbids them; suggest proper type design instead.
+        - Code comments can be in Korean or English.
+        - Review the code to ensure it is well-structured and adheres to best practices.
+        - Check for security vulnerabilities and confirm the code is secure.
+        - Optimize the code for performance, removing any unnecessary elements.
+        - Suggest ways to modularize complex or duplicated code.
+        - Suggest ways to simplify the logic.
+    - path: "**/*.md"
+      instructions: |
+        Perform a review of the provided code with following key aspects in mind:
+        - Review the documentation for clarity and readability.
+        - If a sentence is awkward, rewrite it into a new one.
+  abort_on_close: true
+  auto_review:
+    enabled: true
+    auto_incremental_review: false
+    ignore_title_keywords:
+      - "WIP"
+    labels: []
+    drafts: false
+    base_branches: []
+  finishing_touches:
+    docstrings:
+      enabled: true
+  tools:
+    shellcheck:
+      enabled: true
+    ruff:
+      enabled: true
+    markdownlint:
+      enabled: true
+    github-checks:
+      enabled: true
+      timeout_ms: 90000
+    languagetool:
+      enabled: true
+      enabled_only: false
+      level: picky
+      enabled_rules: []
+      disabled_rules: []
+      enabled_categories: []
+      disabled_categories: []
+    biome:
+      enabled: true
+    hadolint:
+      enabled: true
+    swiftlint:
+      enabled: false
+    phpstan:
+      enabled: false
+      level: default
+    golangci-lint:
+      enabled: false
+    yamllint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    checkov:
+      enabled: true
+    detekt:
+      enabled: true
+    eslint:
+      enabled: false
+    rubocop:
+      enabled: false
+    buf:
+      enabled: false
+    regal:
+      enabled: false
+    actionlint:
+      enabled: true
+    pmd:
+      enabled: false
+    cppcheck:
+      enabled: false
+    semgrep:
+      enabled: true
+    circleci:
+      enabled: false
+    ast-grep:
+      packages: []
+      rule_dirs: []
+      util_dirs: []
+      essential_rules: true
+chat:
+  auto_reply: true
+  integrations:
+    jira:
+      usage: auto
+    linear:
+      usage: auto
+knowledge_base:
+  opt_out: false
+  web_search:
+    enabled: true
+  learnings:
+    scope: global
+  issues:
+    scope: global
+  jira:
+    usage: auto
+    project_keys: []
+  linear:
+    usage: auto
+    team_keys: []
+  pull_requests:
+    scope: global
+code_generation:
+  docstrings:
+    language: en-US

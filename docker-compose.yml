@@ -1,0 +1,158 @@
+# ============================================================================
+# Production stack — 홈서버(Mac mini) 전용
+#
+# 프론트엔드(order, console)는 Vercel에 배포되므로 여기에 포함하지 않습니다.
+# 공개 진입점은 Cloudflare Tunnel입니다(아웃바운드 터널 + TLS는 Cloudflare가 처리).
+#   → 커스텀 도메인 api.ssurak.com 을 홈서버 ssurak:8080 에 매핑(대시보드에서 설정).
+#   → 포트포워딩/유동 IP/헤어핀 불필요, WebSocket 지원, 인바운드 포트 0.
+#   → MySQL/Redis/ssurak 모두 비공개. order/console와 api 가 같은 등록가능도메인
+#     (예: order.ssurak.com / console.ssurak.com / api.ssurak.com)이라 쿠키가 same-site.
+#
+#   배포:  docker compose up -d --build
+#   개발:  docker compose -f docker-compose.dev.yml up
+#
+# 필요한 .env 값:
+#   DB_ROOT_PASSWORD, DB_NAME, DB_USER, DB_PASSWORD
+#   REDIS_PASSWORD
+#   JWT_* (access/refresh secret 등 기존 값)
+#   ORDER_APP_URL=https://order.ssurak.com         # CORS 허용 오리진
+#   CONSOLE_APP_URL=https://console.ssurak.com   # CORS 허용 오리진
+#   COOKIE_DOMAIN=.ssurak.com                      # 쿠키 도메인(서브도메인 공유, 예: .ssurak.com)
+#   CLOUDFLARE_TUNNEL_TOKEN=eyJ...                  # 터널 토큰(긴 eyJ... 문자열, ID 아님)
+# ============================================================================
+# 프로젝트명 고정 — 기본값(디렉토리명 "backend")은 같은 이름의 다른 레포와
+# 볼륨/네트워크를 공유하게 되므로 반드시 명시한다.
+name: ssurak
+
+services:
+  mysql:
+    build:
+      context: .
+      dockerfile: db/Dockerfile
+    container_name: ssurak-mysql
+    restart: unless-stopped
+    command:
+      # 운영용: 내구성 우선 설정
+      - --innodb_flush_log_at_trx_commit=1
+      - --sync_binlog=1
+      - --binlog_expire_logs_seconds=604800 # 7 days
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    # 공개 포트 없음. 로컬 디버깅이 필요할 때만 아래 주석 해제(루프백 바인딩).
+    # ports:
+    #   - "127.0.0.1:3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - ssurak-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "root",
+          "-p$$MYSQL_ROOT_PASSWORD",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.0-alpine
+    container_name: ssurak-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    networks:
+      - ssurak-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Prisma 마이그레이션 + 시딩 1회성 실행 (migrate deploy → tsx prisma/seed.ts).
+  # seed.ts 는 upsert 기반이라 재실행해도 안전(멱등).
+  # production 이미지에는 prisma CLI(devDependency)가 없으므로 db 전용 이미지를 쓴다.
+  # 시크릿은 불필요하므로 env_file 없음.
+  migrate:
+    build:
+      context: .
+      dockerfile: db/studio.Dockerfile
+      target: migrate
+    container_name: ssurak-migrate
+    environment:
+      DATABASE_URL: mysql://${DB_USER}:${DB_PASSWORD}@mysql:3306/${DB_NAME}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - ssurak-network
+    restart: "no"
+
+  ssurak:
+    image: ssurak-api
+    build:
+      context: .
+      dockerfile: ssurak-api/Dockerfile
+      target: production # vite build 번들(dist/main.mjs)을 순수 node 로 실행
+    container_name: ssurak-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      DATABASE_URL: mysql://${DB_USER}:${DB_PASSWORD}@mysql:3306/${DB_NAME}
+      REDIS_HOST: redis
+    expose:
+      - "8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - ssurak-network
+    healthcheck:
+      # GET / 이 헬스체크 엔드포인트 (app.controller.ts)
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    # JWT_*, REDIS_PASSWORD, COOKIE_DOMAIN, ORDER/CONSOLE_APP_URL 등 주입
+    # (environment: 값이 우선 적용됨)
+    env_file:
+      - .env
+
+  # Cloudflare Tunnel — 공개 진입점.
+  # api.ssurak.com → (Cloudflare 엣지) → 아웃바운드 터널 → http://ssurak:8080.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: ssurak-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      ssurak:
+        condition: service_healthy
+    networks:
+      - ssurak-network
+
+networks:
+  ssurak-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local

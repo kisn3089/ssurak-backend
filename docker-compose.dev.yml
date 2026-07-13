@@ -1,0 +1,132 @@
+# ============================================================================
+# Development stack
+#
+# 환경변수 규칙:
+#   - env_file: .env 는 시크릿(JWT_* 등)이 필요한 ssurak 서비스에만 건다.
+#     나머지 서비스는 필요한 변수만 environment: 로 명시한다.
+# ============================================================================
+
+name: ssurak-dev
+
+services:
+  # MySQL Database for development
+  mysql:
+    build:
+      context: .
+      dockerfile: db/Dockerfile
+    container_name: ssurak-dev-mysql
+    restart: unless-stopped
+    command:
+      # 개발용: 내구성보다 속도 우선 (운영 설정은 docker-compose.yml 참고)
+      - --skip-log-bin
+      - --sync_binlog=0
+      - --innodb_flush_log_at_trx_commit=2
+      - --innodb_temp_data_file_path=ibtmp1:64M:autoextend:max:512M
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - mysql_dev_data:/var/lib/mysql
+    networks:
+      - ssurak-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "root",
+          "-p$$MYSQL_ROOT_PASSWORD",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7.0-alpine
+    container_name: ssurak-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    networks:
+      - ssurak-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # NestJS Backend (ssurak-api) - Development
+  ssurak:
+    image: ssurak-api-dev
+    build:
+      context: .
+      dockerfile: ssurak-api/Dockerfile
+      target: development
+    container_name: ssurak-api-dev
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 8080
+      DATABASE_URL: mysql://${DB_USER}:${DB_PASSWORD}@mysql:3306/${DB_NAME}
+      REDIS_HOST: redis
+      # dev 프론트는 호스트에서 실행되므로 CORS 오리진은 localhost 고정
+      ORDER_APP_URL: http://localhost:3000
+      CONSOLE_APP_URL: http://localhost:3001
+    ports:
+      - "127.0.0.1:${SERVER_PORT}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ssurak-network
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/ssurak-api/node_modules
+      - /app/db/node_modules
+      - /app/packages/schema/node_modules
+    # JWT_*, REDIS_PASSWORD 등 시크릿 주입 (environment: 값이 우선 적용됨)
+    env_file:
+      - .env
+
+  # Prisma Studio - Database GUI
+  prisma-studio:
+    build:
+      context: .
+      dockerfile: db/studio.Dockerfile
+      target: studio
+    container_name: ssurak-prisma-studio
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: mysql://${DB_USER}:${DB_PASSWORD}@mysql:3306/${DB_NAME}
+    ports:
+      - "127.0.0.1:5555:5555"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - ssurak-network
+
+networks:
+  ssurak-network:
+    driver: bridge
+
+volumes:
+  mysql_dev_data:
+    driver: local
+  redis_data:
+    driver: local

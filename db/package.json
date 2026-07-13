@@ -1,0 +1,31 @@
+{
+  "name": "@ssurak/db",
+  "version": "0.1.0",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "private": true,
+  "scripts": {
+    "build": "pnpm prisma:generate",
+    "prisma:generate": "dotenv -e ../.env -- prisma generate",
+    "prisma:migrate": "dotenv -e ../.env -- prisma migrate dev",
+    "prisma:deploy": "dotenv -e ../.env -- prisma migrate deploy",
+    "prisma:seed": "dotenv -e ../.env -- tsx prisma/seed.ts",
+    "prisma:reset": "dotenv -e ../.env -- prisma migrate reset",
+    "prisma:studio": "dotenv -e ../.env -- prisma studio"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.0",
+    "bcrypt": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "dotenv-cli": "^11.0.0",
+    "prisma": "^6.19.0",
+    "prisma-json-types-generator": "^3.6.2",
+    "tsx": "^4.7.0",
+    "typescript": "^6.0.3"
+  }
+}
