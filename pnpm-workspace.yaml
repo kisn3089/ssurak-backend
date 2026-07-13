@@ -1,0 +1,4 @@
+packages:
+  - "db"
+  - "ssurak-api"
+  - "packages/*"

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/nodemon",
+  "watch": ["src", "../db", "../packages/schema"],
+  "ext": "ts,json",
+  "ignore": [
+    "**/*.spec.ts",
+    "**/*.e2e-spec.ts",
+    "dist/**",
+    "uploads/**",
+    "**/node_modules/**",
+    "../db/node_modules/**",
+    "../packages/schema/node_modules/**"
+  ],
+  "exec": "vite-node src/main.ts",
+  "signal": "SIGTERM",
+  "delay": 200
+}

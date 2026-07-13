@@ -1,0 +1,38 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+
+# Testing
+coverage
+*.spec.ts
+
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+
+# OS
+.DS_Store
+
+# IDEs
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# Local env files
+.env*.local
+.env.test
+
+# Git
+.git
+.gitignore
+README.md
+
+# Misc
+.eslintcache

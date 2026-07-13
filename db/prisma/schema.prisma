@@ -1,0 +1,338 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+generator json {
+  provider = "prisma-json-types-generator"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum AdminRole {
+  /**
+   * 모든 권한을 소유한 관리자
+   */
+  SUPER
+  /**
+   * 일부 기능에 대한 write 권한을 소유한 관리자
+   */
+  SUPPORT
+  /**
+   * Readonly 권한만 소유한 관리자
+   */
+  VIEWER
+}
+
+model Admin {
+  id           BigInt    @id @default(autoincrement())
+  publicId     String    @unique @default(cuid(2)) @map("public_id")
+  email        String    @unique
+  password     String
+  name         String
+  role         AdminRole @default(VIEWER)
+  isActive     Boolean   @default(true)
+  refreshToken String?   @map("refresh_token")
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("admin")
+}
+
+/**
+ * 매장 사장님 모델
+ * 추후 권한 관리가 필요할 수 있음
+ */
+model Owner {
+  id             BigInt    @id @default(autoincrement())
+  publicId       String    @unique @default(cuid(2)) @map("public_id")
+  email          String    @unique
+  password       String
+  name           String
+  phone          String
+  businessNumber String?   @unique @map("business_number")
+  isActive       Boolean   @default(false) @map("is_active")
+  refreshToken   String?   @map("refresh_token")
+  lastLoginAt    DateTime? @map("last_login_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  stores Store[]
+
+  @@map("owner")
+}
+
+model Store {
+  id              BigInt   @id @default(autoincrement())
+  publicId        String   @unique @default(cuid(2)) @map("public_id")
+  ownerId         BigInt   @map("owner_id")
+  name            String
+  phone           String?
+  address         String
+  addressDetail   String?  @map("address_detail")
+  businessHours   String?  @map("business_hours")
+  description     String?  @db.Text
+  isOpen          Boolean  @default(false) @map("is_open")
+  acceptedMessage String?  @map("accepted_message") @db.VarChar(500)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  owner      Owner      @relation(fields: [ownerId], references: [id])
+  tables     Table[]
+  orders     Order[]
+  categories Category[]
+
+  @@map("store")
+}
+
+/**
+ * 매장 메뉴의 분류
+ * 매장 → 카테고리 → 메뉴 계층 구조
+ */
+model Category {
+  id       BigInt @id @default(autoincrement())
+  publicId String @unique @default(cuid(2)) @map("public_id")
+  storeId  BigInt @map("store_id")
+  name     String
+  /**
+   * 카테고리 표시 순서 (Sparse 패턴)
+   * 10, 20, 30... 으로 부여하여 사이 삽입 시 15만 넣으면 됨.
+   * 가득 차면 재정규화(10, 20, 30... 재할당) 필요.
+   * orderBy: { sortOrder: 'asc' }
+   */
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  store Store  @relation(fields: [storeId], references: [id])
+  menus Menu[]
+
+  @@unique([storeId, name])
+  @@map("category")
+}
+
+/**
+ * 매장의 테이블 정보
+ * 테이블별 메타데이터와 상태를 관리
+ */
+model Table {
+  id          BigInt   @id @default(autoincrement())
+  publicId    String   @unique @default(cuid(2)) @map("public_id")
+  storeId     BigInt   @map("store_id")
+  tableNumber String   @map("table_number") @db.VarChar(10)
+  seats       Int?     
+  /**
+   * 층수 (1층, 2층 등)
+   */
+  floor       Int?
+  /**
+   * 구역 (예: "A구역", "야외", "룸")
+   */
+  section     String?
+  isActive    Boolean  @default(true) @map("is_active")
+  qrCode      String   @unique @default(cuid(2)) @map("qr_code")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  store         Store          @relation(fields: [storeId], references: [id])
+  orders        Order[]
+  tableSessions TableSession[]
+
+  @@unique([storeId, tableNumber])
+  @@map("table")
+}
+
+/**
+ * 사장님이 등록하는 매장 메뉴이자, 고객이 주문할 때 선택하는 메뉴
+ */
+model Menu {
+  id              BigInt    @id @default(autoincrement())
+  publicId        String    @unique @default(cuid(2)) @map("public_id")
+  categoryId      BigInt    @map("category_id")
+  name            String
+  price           Int
+  description     String?   @db.VarChar(500)
+  imageUrl        String?   @map("image_url") @db.VarChar(500)
+  isAvailable     Boolean   @default(true) @map("is_available")
+  /**
+   * 카테고리 내 메뉴 표시 순서 (Sparse 패턴: 10, 20, 30...)
+   * orderBy: [{ category: { sortOrder: 'asc' } }, { sortOrder: 'asc' }]
+   */
+  sortOrder       Int       @default(0) @map("sort_order")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+  // 예시:
+  // { "종류": { "options": [{ "key": "아이스", "description": "시원하게 드셔보세요.", "price": 0 },
+  //                          { "key": "핫", "description": "따뜻하게 드셔보세요.", "price": 0 }],
+  //             "defaultKey": "아이스" } }
+  /// [MenuRequiredOption]
+  requiredOptions Json?     @map("required_options")
+  // 예시:
+  // { "카페인": { "options": [{ "key": "진하게", "description": "카페인을 진하게 즐겨", "price": 1000 },
+  //                            { "key": "연하게", "description": "카페인을 연하게 즐겨", "price": 0 }],
+  //              "trigger": [{ "group": "원두", "in": ["케냐", "코스타리코"] }],
+  //              "defaultKey": "진하게" } }
+  /// [MenuCustomOption]
+  customOptions   Json?     @map("custom_options")
+
+  // MVP 기능은 아니기 때문에 일단 보류
+  // switchMenu ice_americano 선택 시 상세 페이지에서 변경 가능한 메뉴(예시: 스타벅스) hot_americano 등으로 변경할 수 있도록 menu 선택지 제공
+
+  category   Category    @relation(fields: [categoryId], references: [id])
+  orderItems OrderItem[]
+
+  @@index([categoryId, sortOrder])
+  @@map("menu")
+}
+
+enum OrderStatus {
+  /**
+   * 주문을 접수하기 전 상태 @default
+   */
+  PENDING
+  /**
+   * 주문을 수락한 상태로 조리에 들어가기 직전 상태
+   */
+  ACCEPTED
+  /**
+   * 조리가 진행 중인 상태
+   */
+  PREPARING
+  /**
+   * 조리가 완료되어 픽업 및 서빙이 완료된 상태
+   */
+  COMPLETED
+  /**
+   * 주문이 취소된 상태, 복구할 수 없음
+   */
+  CANCELLED
+}
+
+/**
+ * 고객이 주문하는 단위
+ * 예) 아이스 아메리카노 얼음 적게 하나, 라떼 사이즈 라지 하나
+ */
+model Order {
+  id              BigInt      @id @default(autoincrement())
+  publicId        String      @unique @default(cuid(2)) @map("public_id")
+  /**
+   * 고객 주문 멱등성 키. 세션과 장바구니 업데이트 시점으로 기준으로 같은 장바구니로 동시에 여러 주문이 들어오는 것을 방지한다.
+   * 관리자 주문은 사용하지 않으므로 nullable.
+   */
+  idempotencyKey  String?     @unique @map("idempotency_key")
+  storeId         BigInt      @map("store_id")
+  tableId         BigInt      @map("table_id")
+  tableSessionId  BigInt      @map("table_session_id")
+  status          OrderStatus @default(PENDING)
+  /**
+   * 메뉴마다의 요청사항과 별개로 고객이 남기는 요청사항
+   * 예) 해장국 덜 맵게 해주세요.
+   */
+  memo            String?     @db.VarChar(500)
+  /**
+   * 고객이 주문을 취소한 이유
+   */
+  cancelledReason String?     @map("cancelled_reason")
+  acceptedAt      DateTime?   @map("accepted_at")
+  completedAt     DateTime?   @map("completed_at")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  store        Store        @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  table        Table        @relation(fields: [tableId], references: [id], onDelete: Restrict)
+  tableSession TableSession @relation(fields: [tableSessionId], references: [id], onDelete: Restrict)
+  orderItems   OrderItem[]
+
+  @@index([tableSessionId])
+  @@index([storeId, status, completedAt])
+  @@map("order")
+}
+
+/**
+ * 고객이 수량, 옵션과 함께 메뉴를 선택하는 단위
+ * 예) 아이스 아메리카노 얼음 적게 하나
+ */
+model OrderItem {
+  id              BigInt   @id @default(autoincrement())
+  publicId        String   @unique @default(cuid(2)) @map("public_id")
+  orderId         BigInt   @map("order_id")
+  menuId          BigInt   @map("menu_id")
+  menuName        String   @map("menu_name")
+  menuImageUrl    String?  @map("menu_image_url") @db.VarChar(500)
+  basePrice       Int      @map("base_price")
+  optionsPrice    Int      @default(0) @map("options_price")
+  unitPrice       Int      @map("unit_price")
+  quantity        Int      @default(1)
+  // 고객이 선택한 필수 및 선택 옵션들
+  // 예) { "requiredOptions": { "사이즈": "라지" }, "customOptions": { "얼음": "적게" } }
+  /// [OrderItemOptionSnapshot]
+  optionsSnapshot Json?    @map("options_snapshot")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id])
+  menu  Menu  @relation(fields: [menuId], references: [id])
+
+  @@index([orderId])
+  @@index([menuId])
+  @@map("order_item")
+}
+
+/**
+ * 테이블 세션 상태 관리
+ * activeSession 만료 시간을 테이블에서 보여줘야 하고 연장 기능도 필요하다.
+ * 기본 세션 시간은 2시간으로 고정하고 연장하는 방식으로 한다.
+ */
+enum TableSessionStatus {
+  /**
+   * 세션은 생성되었지만 주문 대기 상태
+   */
+  WAITING_ORDER
+  /**
+   * 테이블이 활성화되어 주문이 가능한 상태
+   */
+  ACTIVE
+  /**
+   * 결제 대기 중인 상태
+   */
+  PAYMENT_PENDING
+  /**
+   * 세션이 종료된 상태 (결제 완료 또는 만료)
+   */
+  CLOSED
+}
+
+model TableSession {
+  id       BigInt             @id @default(autoincrement())
+  publicId String             @unique @default(cuid(2)) @map("public_id")
+  tableId  BigInt             @map("table_id")
+  status   TableSessionStatus @default(WAITING_ORDER)
+
+  /**
+   * 세션 관리
+   */
+  sessionToken String    @unique @default(cuid(2)) @map("session_token")
+  activatedAt  DateTime  @default(now()) @map("activated_at")
+  expiresAt    DateTime  @map("expires_at")
+  closedAt     DateTime? @map("closed_at")
+
+  /**
+   * 결제 정보
+   * 결제를 orderItem 단위로 하는 것을 고려하면 별도의 Payment 모델이 필요하다.
+   */
+  paidAmount Int @default(0) @map("paid_amount")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  table  Table   @relation(fields: [tableId], references: [id])
+  orders Order[]
+
+  @@index([tableId, activatedAt])
+  @@index([sessionToken])
+  @@map("table_session")
+}
+
