@@ -102,7 +102,11 @@ export class SessionClient {
   async updateSessionStatus(
     tx: Tx | undefined,
     tableSession: TableSession,
-    status: TableSessionStatus | "EXTEND_EXPIRES_AT" | "REACTIVATE",
+    status:
+      | TableSessionStatus
+      | "EXTEND_EXPIRES_AT"
+      | "REACTIVATE"
+      | "PAYMENT_PENDING",
     updateDto?: SessionActivatePayload
   ): Promise<PublicSession> {
     switch (status) {
@@ -118,7 +122,8 @@ export class SessionClient {
       case "REACTIVATE":
         return await this.reactivateSession(tx, tableSession);
 
-      case TableSessionStatus.PAYMENT_PENDING:
+      /** 결제 처리 명령 (DB 상태 아님) — 정산 후 세션을 CLOSED로 종료한다 */
+      case "PAYMENT_PENDING":
         return await this.finishSessionByPayment(tableSession);
 
       default:
