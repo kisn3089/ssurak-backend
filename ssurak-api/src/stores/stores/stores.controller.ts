@@ -10,7 +10,7 @@ import {
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { StoresService } from "./stores.service";
 import { Client } from "src/decorators/client.decorator";
-import type { TokenPayload, User } from "@ssurak/db";
+import type { User } from "@ssurak/db";
 import { PublicStoreDto } from "src/dto/response/store.dto";
 import {
   DocsStoreCreate,
@@ -20,7 +20,6 @@ import {
 } from "src/docs/store.docs";
 import { StoreAccessGuard } from "src/utils/guards/store-access.guard";
 import { JwtAuthGuard } from "src/auth/guards/jwt-auth.guard";
-import { Jwt } from "src/decorators/jwt.decorator";
 
 @ApiTags("Store")
 @ApiBearerAuth()
@@ -37,14 +36,8 @@ export class StoresController {
 
   @Get()
   @DocsStoreGetList()
-  async list(
-    @Client() user: User,
-    @Jwt() jwt: TokenPayload
-  ): Promise<PublicStoreDto[]> {
-    const stores = await this.storeService.getStoreList({
-      where: this.storeService.addOwnerIdIfNotAdmin(user, jwt.role),
-      omit: this.storeService.omitPrivate,
-    });
+  async list(@Client() user: User): Promise<PublicStoreDto[]> {
+    const stores = await this.storeService.getStoreList(user);
     return PublicStoreDto.schema.array().parse(stores);
   }
 
@@ -53,17 +46,10 @@ export class StoresController {
   @DocsStoreGetUnique()
   async unique(
     @Client() user: User,
-    @Jwt() jwt: TokenPayload,
     @Param("storeId") storeId: string
   ): Promise<PublicStoreDto> {
     return PublicStoreDto.schema.parse(
-      await this.storeService.getStoreUnique({
-        where: {
-          publicId: storeId,
-          ...this.storeService.addOwnerIdIfNotAdmin(user, jwt.role),
-        },
-        omit: this.storeService.omitPrivate,
-      })
+      await this.storeService.getStoreUnique(user, storeId)
     );
   }
 
