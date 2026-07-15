@@ -32,14 +32,34 @@ model Admin {
   email        String    @unique
   password     String
   name         String
-  role         AdminRole @default(VIEWER)
-  isActive     Boolean   @default(true)
-  refreshToken String?   @map("refresh_token")
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  role        AdminRole @default(VIEWER)
+  isActive    Boolean   @default(true)
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@map("admin")
+}
+
+/**
+ * 로그인(기기)별 인증 세션.
+ * 계정당 여러 행을 허용해 멀티 디바이스 로그인을 지원한다 —
+ * 새 로그인이 다른 기기의 세션을 무효화하지 않는다.
+ * tokenHash는 refresh token의 SHA-256 해시이며 원문은 저장하지 않는다.
+ */
+model AuthSession {
+  id        BigInt   @id @default(autoincrement())
+  /**
+   * TokenPayload["role"] — "owner" | "admin"
+   */
+  role      String   @db.VarChar(16)
+  userId    BigInt   @map("user_id")
+  tokenHash String   @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([role, userId])
+  @@map("auth_session")
 }
 
 /**
@@ -55,7 +75,6 @@ model Owner {
   phone          String
   businessNumber String?   @unique @map("business_number")
   isActive       Boolean   @default(false) @map("is_active")
-  refreshToken   String?   @map("refresh_token")
   lastLoginAt    DateTime? @map("last_login_at")
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
@@ -295,10 +314,6 @@ enum TableSessionStatus {
    * 테이블이 활성화되어 주문이 가능한 상태
    */
   ACTIVE
-  /**
-   * 결제 대기 중인 상태
-   */
-  PAYMENT_PENDING
   /**
    * 세션이 종료된 상태 (결제 완료 또는 만료)
    */
