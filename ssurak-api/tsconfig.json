@@ -5,6 +5,7 @@
     "resolvePackageJsonExports": true,
     "paths": {
       "src/*": ["./src/*"],
+      "test/*": ["./test/*"],
       "@ssurak/db": ["../db/index.ts"],
       "@ssurak/db/constants": ["../db/constants/index.ts"]
     },
