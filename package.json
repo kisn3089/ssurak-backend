@@ -4,6 +4,7 @@
   "private": true,
   "packageManager": "pnpm@9.0.0",
   "scripts": {
+    "postinstall": "test ! -f scripts/postinstall.mjs || node scripts/postinstall.mjs",
     "db:generate": "pnpm --filter @ssurak/db prisma:generate",
     "db:build": "pnpm --filter @ssurak/db build",
     "api:dev": "pnpm --filter @ssurak/ssurak-api dev",
