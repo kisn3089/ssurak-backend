@@ -31,6 +31,10 @@ import {
   ORDER_WITH_ITEMS_RECORD,
 } from "src/common/query/session-query.const";
 import { validateOrderSessionToWrite } from "src/common/validate/order/order-session-to-write";
+import {
+  buildOrderStatusTimestamps,
+  validateOrderStatusTransition,
+} from "src/common/validate/order/status-transition";
 import { MENU_VALIDATION_FIELDS_SELECT } from "src/common/query/menu-query.const";
 import { TABLE_OMIT } from "src/common/query/table-query.const";
 import {
@@ -65,7 +69,7 @@ export class OrdersService {
     session: SessionWithTable,
     createOrderPayload: CreateCustomerOrderPayloadDto
   ): Promise<ReturnOrder<CreatedOrder, "tableNumber" | "deduplicated">> {
-    const cart = await this.cartService.getCartList(session.sessionToken);
+    const cart = await this.cartService.getCart(session.sessionToken);
 
     if (cart.menus.length === 0) {
       throw new HttpException(
@@ -104,7 +108,8 @@ export class OrdersService {
       }
     );
 
-    await this.cartService.clearCart(session);
+    // 주문된 항목만 차감 — 주문 처리 중 다른 기기에서 담은 항목은 보존한다
+    await this.cartService.removeOrderedItems(session, cart.menus);
 
     return createdOrder;
   }
@@ -336,6 +341,16 @@ export class OrdersService {
     });
 
     const validOrder = validateOrderSessionToWrite(order);
+
+    const nextStatus =
+      typeof data.status === "string" ? data.status : undefined;
+    if (nextStatus) {
+      validateOrderStatusTransition(validOrder.status, nextStatus);
+      data = {
+        ...data,
+        ...buildOrderStatusTimestamps(validOrder, nextStatus),
+      };
+    }
 
     const updated = await this.prismaService.order.update({
       where: { id: validOrder.id },

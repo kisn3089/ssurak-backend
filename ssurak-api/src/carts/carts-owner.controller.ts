@@ -18,7 +18,7 @@ export class CartOwnerController {
   @Get()
   @UseGuards(ZodValidation({ params: storeIdAndSessionTokenSchema }))
   @DocsOwnerCartGet()
-  async getCart(
+  async getCartByStore(
     @Param("storeId") storeId: string,
     @Param("sessionToken") sessionToken: string
   ): Promise<Cart> {

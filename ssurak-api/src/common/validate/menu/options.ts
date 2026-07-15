@@ -8,10 +8,11 @@ import type {
   MenuCustomOptionValue,
   MenuOption,
   MenuRequiredOptionValue,
+  OrderItemOptionSnapshot,
 } from "@ssurak/schema";
 
 type JsonMenuOptions = Pick<Menu, "requiredOptions" | "customOptions">;
-type PayloadOptions = {
+export type PayloadOptions = {
   requiredOptions?: Record<string, string>;
   customOptions?: Record<string, string>;
 };
@@ -75,6 +76,28 @@ function getValidatedMenuOptions<
   return validatedOptions;
 }
 
+/**
+ * 주문 아이템 optionsSnapshot에서 고객이 선택했던 값(그룹명 → 옵션 key)을 복원한다.
+ * 옵션 부분 업데이트 시 페이로드에 없는 그룹을 기존 선택으로 채우는 데 사용한다.
+ */
+export function extractSelectionsFromSnapshot(
+  snapshot: OrderItemOptionSnapshot | null | undefined
+): PayloadOptions {
+  const toSelections = (
+    options?: OptionSnapshotValue
+  ): Record<string, string> | undefined => {
+    if (!options || Object.keys(options).length === 0) return undefined;
+    return Object.fromEntries(
+      Object.entries(options).map(([group, option]) => [group, option.key])
+    );
+  };
+
+  return {
+    requiredOptions: toSelections(snapshot?.requiredOptions),
+    customOptions: toSelections(snapshot?.customOptions),
+  };
+}
+
 export function getValidatedMenuOptionsSnapshot(
   menuOptions: JsonMenuOptions,
   payloadOptions: PayloadOptions
@@ -90,11 +113,11 @@ export function getValidatedMenuOptionsSnapshot(
   );
   const payloadRequiredOptionsKeys = Object.keys(payloadRequiredOptions || {});
 
-  if (requiredMenuOptionsKeys.length !== payloadRequiredOptionsKeys.length) {
-    const missingRequiredOptionsKeys = requiredMenuOptionsKeys.filter(
-      (key) => !payloadRequiredOptionsKeys.includes(key)
-    );
+  const missingRequiredOptionsKeys = requiredMenuOptionsKeys.filter(
+    (key) => !payloadRequiredOptionsKeys.includes(key)
+  );
 
+  if (missingRequiredOptionsKeys.length > 0) {
     throw new HttpException(
       {
         ...exceptionContentsIs("MENU_OPTIONS_REQUIRED"),

@@ -1,7 +1,10 @@
 import { Injectable } from "@nestjs/common";
 import { OrderStatus, Prisma, PublicOrderItem } from "@ssurak/db";
 import { PrismaService } from "src/prisma/prisma.service";
-import { getValidatedMenuOptionsSnapshot } from "src/common/validate/menu/options";
+import {
+  extractSelectionsFromSnapshot,
+  getValidatedMenuOptionsSnapshot,
+} from "src/common/validate/menu/options";
 import {
   CreateOrderItemPayloadDto,
   UpdateOrderItemPayloadDto,
@@ -173,11 +176,19 @@ export class OrderItemService {
 
     validateMenuAvailableOrThrow(menu);
 
+    /**
+     * 같은 메뉴의 옵션 부분 업데이트면 페이로드에 없는 그룹은 기존 선택을 유지한다.
+     * 메뉴 자체가 바뀌면 기존 스냅샷은 새 메뉴에 유효하지 않으므로 병합하지 않는다.
+     */
+    const existingSelections = menuPublicId
+      ? {}
+      : extractSelectionsFromSnapshot(orderItem.optionsSnapshot);
+
     const { optionsPrice, optionsSnapshot } = getValidatedMenuOptionsSnapshot(
       menu,
       {
-        requiredOptions,
-        customOptions,
+        requiredOptions: requiredOptions ?? existingSelections.requiredOptions,
+        customOptions: customOptions ?? existingSelections.customOptions,
       }
     );
 

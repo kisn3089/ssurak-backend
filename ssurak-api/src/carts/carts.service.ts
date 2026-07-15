@@ -123,7 +123,7 @@ export class CartService {
     return cart;
   }
 
-  async getCartList(sessionToken: string): Promise<Cart> {
+  async getCart(sessionToken: string): Promise<Cart> {
     return this.readCart(sessionToken);
   }
 
@@ -339,6 +339,37 @@ export class CartService {
   async clearCart(sessionWithTable: SessionWithTable): Promise<CartSubscriber> {
     return this.withCartLock(sessionWithTable.sessionToken, async () => {
       await this.redis.del(this.cartKey(sessionWithTable.sessionToken));
+      return this.subscriberOf(sessionWithTable);
+    });
+  }
+
+  /**
+   * 주문된 항목만 수량 기준으로 차감한다. 주문 처리 중 다른 기기에서
+   * 새로 담은 항목이나 늘어난 수량은 보존한다. 전부 차감되면 키를 삭제한다.
+   */
+  async removeOrderedItems(
+    sessionWithTable: SessionWithTable,
+    orderedItems: Pick<PublicCartItem, "id" | "quantity">[]
+  ): Promise<CartSubscriber> {
+    return this.withCartLock(sessionWithTable.sessionToken, async () => {
+      const cart = await this.readCart(sessionWithTable.sessionToken);
+      const orderedQuantityById = new Map(
+        orderedItems.map((item) => [item.id, item.quantity])
+      );
+
+      cart.menus = cart.menus.flatMap((item) => {
+        const orderedQuantity = orderedQuantityById.get(item.id);
+        if (orderedQuantity === undefined) return [item];
+        const remaining = item.quantity - orderedQuantity;
+        return remaining > 0 ? [{ ...item, quantity: remaining }] : [];
+      });
+
+      if (cart.menus.length === 0) {
+        await this.redis.del(this.cartKey(sessionWithTable.sessionToken));
+        return this.subscriberOf(sessionWithTable);
+      }
+
+      await this.writeCart(sessionWithTable, cart);
       return this.subscriberOf(sessionWithTable);
     });
   }
