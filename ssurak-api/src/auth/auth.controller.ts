@@ -1,4 +1,4 @@
-import { Controller, Post, Res, UseGuards } from "@nestjs/common";
+import { Controller, HttpStatus, Post, Res, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { AuthService } from "./services/auth.service";
 import {
@@ -27,7 +27,13 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post("owner/signin")
-  @UseGuards(ZodValidation({ body: signInPayloadSchema }), LocalSignInGuard)
+  @UseGuards(
+    ZodValidation({
+      body: signInPayloadSchema,
+      exception: { content: "SIGNIN_FAILED", status: HttpStatus.UNAUTHORIZED },
+    }),
+    LocalSignInGuard
+  )
   @DocsOwnerSignIn()
   async ownerSignIn(
     @Client() owner: Owner,
@@ -39,7 +45,13 @@ export class AuthController {
   }
 
   @Post("admin/signin")
-  @UseGuards(ZodValidation({ body: signInPayloadSchema }), LocalSignInGuard)
+  @UseGuards(
+    ZodValidation({
+      body: signInPayloadSchema,
+      exception: { content: "SIGNIN_FAILED", status: HttpStatus.UNAUTHORIZED },
+    }),
+    LocalSignInGuard
+  )
   @DocsAdminSignIn()
   async adminSignIn(
     @Client() admin: Admin,

@@ -17,6 +17,15 @@ interface Schemas {
   body?: ZodSchema;
   params?: ZodSchema;
   query?: ZodSchema;
+  /**
+   * 검증 실패 시 기본 400(ZOD_*_FAILED) 대신 던질 예외.
+   * 지정하면 zod details를 응답에 포함하지 않는다 — 로그인처럼
+   * 실패 사유를 노출하면 안 되는 엔드포인트에서 사용한다.
+   */
+  exception?: {
+    content: ExceptionContentKeys;
+    status: HttpStatus;
+  };
 }
 
 export function ZodValidation(schemas: Schemas): Type<CanActivate> {
@@ -70,6 +79,12 @@ export function ZodValidation(schemas: Schemas): Type<CanActivate> {
         return schema.parse(data);
       } catch (error: unknown) {
         if (error instanceof ZodError) {
+          if (schemas.exception) {
+            throw new HttpException(
+              exceptionContentsIs(schemas.exception.content),
+              schemas.exception.status
+            );
+          }
           throw new HttpException(
             {
               ...exceptionContentsIs(exceptionError),

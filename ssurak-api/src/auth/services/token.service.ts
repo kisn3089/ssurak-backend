@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { Response } from "express";
@@ -38,6 +39,8 @@ export class TokenService {
       iss: this.configService.get("JWT_ISSUER"),
       aud: this.configService.get("JWT_AUDIENCE"),
       typ: `Bearer`,
+      // 같은 초에 발급돼도 토큰 문자열이 유일하도록 보장 (rotation 전제 조건)
+      jti: randomUUID(),
     };
 
     const expiresAt = this.createTokenHelper(
@@ -60,10 +63,19 @@ export class TokenService {
       expires: expiresRefreshToken,
     });
 
+    // access 쿠키는 refresh 만료까지 유지한다. JWT 만료와 맞추면 만료 시점에
+    // 쿠키가 사라져 요청에 토큰이 아예 실리지 않고, 서버가 419(만료) 대신
+    // 401을 응답해 클라이언트 인터셉터의 자동 갱신이 동작하지 않는다.
     responseCookie.set(response, COOKIE_TABLE.ACCESS_TOKEN, accessToken, {
       expires: expiresRefreshToken,
     });
 
-    return { accessToken, expiresAt, refreshToken, tokenPayload };
+    return {
+      accessToken,
+      expiresAt,
+      refreshToken,
+      refreshExpiresAt: expiresRefreshToken,
+      tokenPayload,
+    };
   }
 }
