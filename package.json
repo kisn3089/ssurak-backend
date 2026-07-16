@@ -11,13 +11,15 @@
     "build": "pnpm --filter @ssurak/db build && pnpm --filter @ssurak/ssurak-api build",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,md}\"",
-    "lint": "eslint \"**/*.{ts,tsx}\" --fix"
+    "lint": "eslint \"**/*.{ts,tsx}\" --fix",
+    "prepare": "husky || true"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
+    "husky": "^9.1.7",
     "prettier": "^3.4.2",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.63.0"
