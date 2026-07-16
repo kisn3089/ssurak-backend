@@ -34,10 +34,7 @@ import {
 } from "src/dto/request/table.dto";
 import { StoreAccessGuard } from "src/utils/guards/store-access.guard";
 import { JwtAuthGuard } from "src/auth/guards/jwt-auth.guard";
-
-type ListQueryParams = {
-  isActive?: boolean;
-};
+import z from "zod";
 
 @ApiTags("Table")
 @ApiBearerAuth()
@@ -68,13 +65,14 @@ export class TableController {
   @DocsTableGetList()
   async list(
     @Param("storeId") storeId: string,
-    @Query() query?: ListQueryParams
+    @Query() query?: z.infer<typeof tableListQuerySchema>
   ): Promise<PublicTable[]> {
     return await this.tableService.getTableList({
       where: {
         store: { publicId: storeId },
-        ...(query?.isActive === true ? { isActive: query.isActive } : {}),
+        ...(query?.isActive !== undefined ? { isActive: query.isActive } : {}),
       },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       omit: this.tableService.omitPrivate,
     });
   }
