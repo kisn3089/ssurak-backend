@@ -108,8 +108,14 @@ export class OrdersService {
       }
     );
 
-    // 주문된 항목만 차감 — 주문 처리 중 다른 기기에서 담은 항목은 보존한다
-    await this.cartService.removeOrderedItems(session, cart.menus);
+    // 주문된 항목만 차감 — 주문 처리 중 다른 기기에서 담은 항목은 보존한다.
+    // 세션 활성화로 expiresAt이 갱신됐을 수 있으므로 생성 결과의 최신 만료시간을
+    // 쓰고, 중복 요청의 이중 차감은 idempotencyKey 기록으로 막는다
+    await this.cartService.removeOrderedItems(
+      { ...session, expiresAt: createdOrder.order.tableSession.expiresAt },
+      cart.menus,
+      idempotencyKey
+    );
 
     return createdOrder;
   }

@@ -346,12 +346,22 @@ export class CartService {
   /**
    * 주문된 항목만 수량 기준으로 차감한다. 주문 처리 중 다른 기기에서
    * 새로 담은 항목이나 늘어난 수량은 보존한다. 전부 차감되면 키를 삭제한다.
+   * dedupeKey(주문 idempotencyKey)가 있으면 같은 주문의 중복 요청이
+   * 두 번 차감하지 않도록 첫 요청만 차감한다.
    */
   async removeOrderedItems(
     sessionWithTable: SessionWithTable,
-    orderedItems: Pick<PublicCartItem, "id" | "quantity">[]
+    orderedItems: Pick<PublicCartItem, "id" | "quantity">[],
+    dedupeKey?: string
   ): Promise<CartSubscriber> {
     return this.withCartLock(sessionWithTable.sessionToken, async () => {
+      if (
+        dedupeKey &&
+        !(await this.claimDeduction(sessionWithTable, dedupeKey))
+      ) {
+        return this.subscriberOf(sessionWithTable);
+      }
+
       const cart = await this.readCart(sessionWithTable.sessionToken);
       const orderedQuantityById = new Map(
         orderedItems.map((item) => [item.id, item.quantity])
@@ -372,6 +382,27 @@ export class CartService {
       await this.writeCart(sessionWithTable, cart);
       return this.subscriberOf(sessionWithTable);
     });
+  }
+
+  /**
+   * 주문 단위 차감 기록. cart 락 안에서 NX로 선점하므로 같은 dedupeKey의
+   * 두 번째 요청은 false를 받는다. 기록 TTL은 세션 만료에 맞춘다.
+   */
+  private async claimDeduction(
+    session: SessionWithTable,
+    dedupeKey: string
+  ): Promise<boolean> {
+    const ttl = this.ttlSeconds(session.expiresAt);
+    if (ttl <= 0) return true; // 세션 만료 직전이면 기록 없이 진행 (쓰기 단계에서 걸러진다)
+
+    const claimed = await this.redis.set(
+      `cart:deducted:${dedupeKey}`,
+      "1",
+      "EX",
+      ttl,
+      "NX"
+    );
+    return claimed === "OK";
   }
 
   async getCartByStore(storeId: string, sessionToken: string): Promise<Cart> {

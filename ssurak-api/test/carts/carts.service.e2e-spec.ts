@@ -13,6 +13,7 @@ import {
   it,
   vi,
 } from "vitest";
+import { mockDeep } from "vitest-mock-extended";
 import { CartService } from "src/carts/carts.service";
 import { PrismaService } from "src/prisma/prisma.service";
 import { expectHttpExceptionAsync } from "test/helpers/expect-http-exception";
@@ -34,37 +35,35 @@ const redis = new Redis({
 // 운영(redis.module.ts)과 동일한 설정
 const redlock = new Redlock([redis], { retryCount: 3, retryDelay: 200 });
 
-const prismaMock = {
-  menu: { findFirstOrThrow: vi.fn() },
-  tableSession: { findFirst: vi.fn() },
-};
+const prismaMock = mockDeep<PrismaService>();
 
-const service = new CartService(
-  redis,
-  redlock,
-  prismaMock as unknown as PrismaService
-);
+const service = new CartService(redis, redlock, prismaMock);
 
-const menuFixture = (overrides: Partial<Menu> = {}) =>
-  ({
-    id: 1n,
-    publicId: "menu-americano",
-    name: "아메리카노",
-    imageUrl: null,
-    price: 3000,
-    isAvailable: true,
-    requiredOptions: {
-      사이즈: {
-        options: [
-          { key: "톨", price: 0 },
-          { key: "라지", price: 500 },
-        ],
-        defaultKey: "톨",
-      },
+const menuFixture = (overrides: Partial<Menu> = {}): Menu => ({
+  id: 1n,
+  publicId: "menu-americano",
+  categoryId: 1n,
+  name: "아메리카노",
+  price: 3000,
+  description: null,
+  imageUrl: null,
+  isAvailable: true,
+  sortOrder: 10,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  deletedAt: null,
+  requiredOptions: {
+    사이즈: {
+      options: [
+        { key: "톨", price: 0 },
+        { key: "라지", price: 500 },
+      ],
+      defaultKey: "톨",
     },
-    customOptions: null,
-    ...overrides,
-  }) as Menu;
+  },
+  customOptions: null,
+  ...overrides,
+});
 
 const usedSessionTokens: string[] = [];
 
@@ -83,12 +82,25 @@ const sessionFixture = (
     activatedAt: new Date(),
     expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     closedAt: null,
+    paidAmount: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
     table: {
+      id: 10n,
       publicId: "table-public-id",
+      storeId: 1n,
+      tableNumber: "1",
+      seats: null,
+      floor: null,
+      section: null,
+      isActive: true,
+      qrCode: "table-qr-code",
+      createdAt: new Date(),
+      updatedAt: new Date(),
       store: { publicId: "store-public-id" },
     },
     ...overrides,
-  } as SessionWithTable;
+  };
 };
 
 const americanoPayload = (quantity = 1) => ({
@@ -118,6 +130,7 @@ afterEach(async () => {
   const keys = usedSessionTokens.flatMap((token) => [
     `cart:${token}`,
     `lock:cart:${token}`,
+    `cart:deducted:${token}`,
   ]);
   if (keys.length > 0) await redis.del(...keys);
   usedSessionTokens.length = 0;
@@ -377,6 +390,83 @@ describe("CartService.removeOrderedItems", () => {
     );
 
     expect(await redis.exists(`cart:${session.sessionToken}`)).toBe(0);
+  });
+
+  it("같은 dedupeKey의 중복 요청은 차감하지 않는다 — 중복 차감 방지", async () => {
+    const session = sessionFixture();
+    // 실제로는 주문 idempotencyKey — 테스트에선 정리 편의상 sessionToken 사용
+    const dedupeKey = session.sessionToken;
+
+    // 주문 스냅샷: 라지 2개 (중복 요청 A·B가 이 스냅샷을 공유한다)
+    const { cart: snapshot } = await service.addItem(
+      session,
+      americanoPayload(2)
+    );
+    const orderedItems = snapshot.menus.map((m) => ({
+      id: m.id,
+      quantity: m.quantity,
+    }));
+
+    // 다른 기기가 같은 항목을 +1 담아 기존 item id에 병합된 상태(수량 3)에서
+    // 요청 A와 B가 같은 스냅샷(2개)으로 각각 차감을 시도한다
+    await service.addItem(session, americanoPayload(1));
+    await service.removeOrderedItems(session, orderedItems, dedupeKey);
+    await service.removeOrderedItems(session, orderedItems, dedupeKey);
+
+    // 수정 전엔 B가 스냅샷 기준 2개를 다시 차감해 남은 1개까지 사라졌다
+    const cart = await service.getCart(session.sessionToken);
+    expect(cart.menus).toHaveLength(1);
+    expect(cart.menus[0].quantity).toBe(1);
+  });
+
+  it("dedupeKey가 없으면 기존처럼 호출마다 차감한다", async () => {
+    const session = sessionFixture();
+    const { cart: snapshot } = await service.addItem(
+      session,
+      americanoPayload(2)
+    );
+    const orderedItems = snapshot.menus.map((m) => ({ id: m.id, quantity: 1 }));
+
+    await service.removeOrderedItems(session, orderedItems);
+    await service.removeOrderedItems(session, orderedItems);
+
+    expect(await redis.exists(`cart:${session.sessionToken}`)).toBe(0);
+  });
+
+  it("차감 기록의 TTL은 세션 만료에 맞춰진다", async () => {
+    const session = sessionFixture();
+    const dedupeKey = session.sessionToken;
+    const { cart } = await service.addItem(session, americanoPayload(2));
+
+    await service.removeOrderedItems(
+      session,
+      cart.menus.map((m) => ({ id: m.id, quantity: m.quantity })),
+      dedupeKey
+    );
+
+    const markerTtl = await redis.ttl(`cart:deducted:${dedupeKey}`);
+    expect(markerTtl).toBeGreaterThan(0);
+    expect(markerTtl).toBeLessThanOrEqual(60 * 60); // 세션 만료(1시간) 이내
+  });
+
+  it("남은 장바구니 TTL은 전달된 세션의 최신 expiresAt으로 계산된다", async () => {
+    const session = sessionFixture();
+    const { cart } = await service.addItem(session, americanoPayload(3));
+    const orderedItems = cart.menus.map((m) => ({ id: m.id, quantity: 1 }));
+
+    // 주문 생성 중 세션이 활성화돼 만료가 2시간으로 연장된 상황
+    // (orders.service는 생성 결과의 tableSession.expiresAt을 넘긴다)
+    const refreshedSession = {
+      ...session,
+      expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+    };
+
+    await service.removeOrderedItems(refreshedSession, orderedItems);
+
+    // 수정 전엔 활성화 이전 expiresAt(1시간) 기준으로 짧게 저장됐다
+    const cartTtl = await redis.ttl(`cart:${session.sessionToken}`);
+    expect(cartTtl).toBeGreaterThan(60 * 60);
+    expect(cartTtl).toBeLessThanOrEqual(2 * 60 * 60);
   });
 });
 
