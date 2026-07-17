@@ -6,6 +6,8 @@ import {
 } from "@nestjs/common";
 import { Response } from "express";
 import { Prisma, TokenPayload, User } from "@ssurak/db";
+import { COOKIE_TABLE } from "@ssurak/db/constants";
+import { responseCookie } from "src/utils/cookies";
 import { comparePlainToEncrypted } from "src/utils/lib/crypt";
 import type { AccessToken, SignInPayload } from "@ssurak/schema";
 import { TokenService } from "./token.service";
@@ -33,7 +35,7 @@ export class AuthService {
     role: TokenPayload["role"]
   ): Promise<AccessToken> {
     const { accessToken, expiresAt, refreshToken, refreshExpiresAt } =
-      this.tokenService.generateToken(user, response, role);
+      this.tokenService.generateToken(user, role);
 
     // 로그인마다 새 토큰을 추가 등록한다 — 다른 기기의 세션은 유지된다
     await this.authSessionService.register(
@@ -43,6 +45,19 @@ export class AuthService {
       refreshExpiresAt
     );
     await this.updateLastSignInByRole(role, user.publicId);
+
+    // 쿠키는 DB 작업이 모두 성공한 뒤에 설정한다 — 중간에 실패하면
+    // 오류 응답에 Set-Cookie가 실려 미등록 토큰이 클라이언트에 남는다
+    responseCookie.set(response, COOKIE_TABLE.REFRESH, refreshToken, {
+      expires: refreshExpiresAt,
+    });
+
+    // access 쿠키는 refresh 만료까지 유지한다. JWT 만료와 맞추면 만료 시점에
+    // 쿠키가 사라져 요청에 토큰이 아예 실리지 않고, 서버가 419(만료) 대신
+    // 401을 응답해 클라이언트 인터셉터의 자동 갱신이 동작하지 않는다.
+    responseCookie.set(response, COOKIE_TABLE.ACCESS_TOKEN, accessToken, {
+      expires: refreshExpiresAt,
+    });
 
     return { accessToken, expiresAt };
   }

@@ -1,11 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
-import { Response } from "express";
 import { Injectable } from "@nestjs/common";
 import { TokenPayload, User } from "@ssurak/db";
-import { COOKIE_TABLE } from "@ssurak/db/constants";
-import { responseCookie } from "src/utils/cookies";
 
 @Injectable()
 export class TokenService {
@@ -30,7 +27,8 @@ export class TokenService {
     };
   }
 
-  generateToken(user: User, response: Response, role: TokenPayload["role"]) {
+  /** 토큰 생성만 담당한다 — 쿠키 적용은 세션 등록이 성공한 뒤 호출부에서 처리한다. */
+  generateToken(user: User, role: TokenPayload["role"]) {
     const tokenPayload: TokenPayload = {
       sub: user.publicId.toString(),
       email: user.email,
@@ -58,17 +56,6 @@ export class TokenService {
     const refreshToken = this.createTokenHelper(
       "JWT_REFRESH_TOKEN_EXPIRATION_MS"
     ).jwt(tokenPayload, "JWT_REFRESH_TOKEN_SECRET");
-
-    responseCookie.set(response, COOKIE_TABLE.REFRESH, refreshToken, {
-      expires: expiresRefreshToken,
-    });
-
-    // access 쿠키는 refresh 만료까지 유지한다. JWT 만료와 맞추면 만료 시점에
-    // 쿠키가 사라져 요청에 토큰이 아예 실리지 않고, 서버가 419(만료) 대신
-    // 401을 응답해 클라이언트 인터셉터의 자동 갱신이 동작하지 않는다.
-    responseCookie.set(response, COOKIE_TABLE.ACCESS_TOKEN, accessToken, {
-      expires: expiresRefreshToken,
-    });
 
     return {
       accessToken,
