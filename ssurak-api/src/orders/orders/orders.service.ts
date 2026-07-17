@@ -31,6 +31,10 @@ import {
   ORDER_WITH_ITEMS_RECORD,
 } from "src/common/query/session-query.const";
 import { validateOrderSessionToWrite } from "src/common/validate/order/order-session-to-write";
+import {
+  buildOrderStatusTimestamps,
+  validateOrderStatusTransition,
+} from "src/common/validate/order/status-transition";
 import { MENU_VALIDATION_FIELDS_SELECT } from "src/common/query/menu-query.const";
 import { TABLE_OMIT } from "src/common/query/table-query.const";
 import {
@@ -65,7 +69,7 @@ export class OrdersService {
     session: SessionWithTable,
     createOrderPayload: CreateCustomerOrderPayloadDto
   ): Promise<ReturnOrder<CreatedOrder, "tableNumber" | "deduplicated">> {
-    const cart = await this.cartService.getCartList(session.sessionToken);
+    const cart = await this.cartService.getCart(session.sessionToken);
 
     if (cart.menus.length === 0) {
       throw new HttpException(
@@ -104,7 +108,14 @@ export class OrdersService {
       }
     );
 
-    await this.cartService.clearCart(session);
+    // 주문된 항목만 차감 — 주문 처리 중 다른 기기에서 담은 항목은 보존한다.
+    // 세션 활성화로 expiresAt이 갱신됐을 수 있으므로 생성 결과의 최신 만료시간을
+    // 쓰고, 중복 요청의 이중 차감은 idempotencyKey 기록으로 막는다
+    await this.cartService.removeOrderedItems(
+      { ...session, expiresAt: createdOrder.order.tableSession.expiresAt },
+      cart.menus,
+      idempotencyKey
+    );
 
     return createdOrder;
   }
@@ -326,29 +337,54 @@ export class OrdersService {
             store: { ownerId: params.ownerId },
           };
 
-    const order = await this.prismaService.order.findFirst({
-      where: whereClause,
-      include: {
-        tableSession: true,
-        store: { select: { publicId: true } },
-        table: { select: { publicId: true, tableNumber: true } },
-      },
-    });
+    // 검증~update 사이 동시 요청이 상태를 바꾸면 검증이 스테일해진다.
+    // update에 읽은 status를 조건으로 걸어 경합을 감지(P2025)하고, 최신 상태로
+    // 1회 재검증해 성공시키거나 도메인 에러를 던진다
+    for (let attempt = 0; ; attempt++) {
+      const order = await this.prismaService.order.findFirst({
+        where: whereClause,
+        include: {
+          tableSession: true,
+          store: { select: { publicId: true } },
+          table: { select: { publicId: true, tableNumber: true } },
+        },
+      });
 
-    const validOrder = validateOrderSessionToWrite(order);
+      const validOrder = validateOrderSessionToWrite(order);
 
-    const updated = await this.prismaService.order.update({
-      where: { id: validOrder.id },
-      data,
-      ...ORDER_ITEMS_WITH_OMIT_PRIVATE,
-    });
+      let updateData = data;
 
-    return {
-      order: updated,
-      subscriber: {
-        storePublicId: validOrder.store.publicId,
-        tablePublicId: validOrder.table.publicId,
-      },
-    };
+      const nextStatus =
+        typeof data.status === "string" ? data.status : undefined;
+
+      if (nextStatus) {
+        validateOrderStatusTransition(validOrder.status, nextStatus);
+        updateData = {
+          ...data,
+          ...buildOrderStatusTimestamps(validOrder, nextStatus),
+        };
+      }
+
+      try {
+        const updated = await this.prismaService.order.update({
+          where: { id: validOrder.id, status: validOrder.status },
+          data: updateData,
+          ...ORDER_ITEMS_WITH_OMIT_PRIVATE,
+        });
+
+        return {
+          order: updated,
+          subscriber: {
+            storePublicId: validOrder.store.publicId,
+            tablePublicId: validOrder.table.publicId,
+          },
+        };
+      } catch (error) {
+        const isStaleStatus =
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2025";
+        if (!isStaleStatus || attempt >= 1) throw error;
+      }
+    }
   }
 }

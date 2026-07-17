@@ -8,7 +8,9 @@ import {
 import { exceptionContentsIs } from "src/common/constants/exceptionContents";
 
 export function validateOrderSessionToWrite<
-  OrderType extends Order & { tableSession: TableSession },
+  OrderType extends Pick<Order, "status"> & {
+    tableSession: Pick<TableSession, "status">;
+  },
 >(order: OrderType | null): OrderType {
   if (!order) {
     throw new HttpException(

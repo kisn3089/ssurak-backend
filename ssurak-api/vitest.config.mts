@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 export default defineConfig({
   resolve: {
     alias: {
-      // 기존 코드의 bare `test/...` import 해석
+      // 기존 코드의 bare `src/...`, `test/...` import 해석
+      src: fileURLToPath(new URL("./src", import.meta.url)),
       test: fileURLToPath(new URL("./test", import.meta.url)),
       // 워크스페이스 .ts 패키지(@ssurak/db)를 소스 .ts로 직접 해석한다.
       // 더 구체적인 서브패스를 먼저 둔다(startsWith 매칭 순서).
@@ -39,6 +40,9 @@ export default defineConfig({
     environment: "node",
     root: "./",
     include: ["test/**/*.spec.ts"],
+    coverage: {
+      include: ["src/**"],
+    },
   },
   plugins: [
     swc.vite({

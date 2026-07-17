@@ -11,6 +11,8 @@ export function isActivateTableOrThrow(isActive: boolean): void {
   }
 }
 
-export function isSessionExpired(session: TableSession): boolean {
+export function isSessionExpired(
+  session: Pick<TableSession, "expiresAt">
+): boolean {
   return session.expiresAt < new Date();
 }

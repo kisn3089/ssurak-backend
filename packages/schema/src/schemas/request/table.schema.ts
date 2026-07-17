@@ -16,17 +16,23 @@ export const createTablePayloadSchema = z
     isActive: z.boolean().optional(),
     section: z
       .string()
+      .trim()
       .max(20, "구역 이름은 최대 20자까지 가능합니다.")
       .optional(),
   })
   .strict();
 
+/** update에서 null은 기존 값을 지우는 의미다. */
+const { seats, floor, section } = createTablePayloadSchema.shape;
+
 export const updateTablePayloadSchema = createTablePayloadSchema
-  .partial()
   .extend({
-    isActive: z.boolean().optional(),
-    qrCode: commonSchema.cuid2("QRCode").optional(),
-  });
+    seats: seats.nullable(),
+    floor: floor.nullable(),
+    section: section.nullable(),
+    qrCode: commonSchema.cuid2("QRCode"),
+  })
+  .partial();
 
 export type UpdateTablePayload = z.infer<typeof updateTablePayloadSchema>;
 

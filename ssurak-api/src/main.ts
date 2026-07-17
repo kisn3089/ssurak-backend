@@ -38,7 +38,6 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // 요청 검증은 ZodValidation 가드가 담당한다 (class-validator 미사용).
   app.use(cookieParser());
 
   const ioAdapter = new RedisIoAdapter(app);
@@ -68,7 +67,7 @@ async function bootstrap() {
     },
   });
 
-  const port = configService.get<number>("PORT", 9090);
+  const port = configService.get<number>("PORT", 8080);
 
   await app.listen(port, "0.0.0.0");
   console.log(`Application is running on: http://localhost:${port}`);

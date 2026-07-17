@@ -65,9 +65,7 @@ export class SessionCoreService {
 
     return await this.createSessionFromTable(tx, identifier);
   }
-  /**
-   * 세션을 ACTIVE 상태로 활성화
-   */
+  /** 세션을 ACTIVE 상태로 활성화 */
   async txActivateSession(
     tx: Tx | undefined,
     tableSession: TableSession,
@@ -79,9 +77,7 @@ export class SessionCoreService {
     );
   }
 
-  /**
-   * 세션을 CLOSED 상태로 비활성화
-   */
+  /** 세션을 CLOSED 상태로 비활성화 */
   async txDeactivateSession(
     tx: Tx | undefined,
     tableSession: TableSession
@@ -92,9 +88,7 @@ export class SessionCoreService {
     );
   }
 
-  /**
-   * 세션 만료 시간 연장
-   */
+  /** 세션 만료 시간 연장 */
   async txExtendSessionExpiry(
     tx: Tx | undefined,
     tableSession: TableSession
@@ -105,9 +99,7 @@ export class SessionCoreService {
     );
   }
 
-  /**
-   * 세션 재활성화 (CLOSED → ACTIVE)
-   */
+  /** 세션 재활성화 (CLOSED → ACTIVE) */
   async txReactivateSession(
     tx: Tx | undefined,
     tableSession: TableSession
@@ -120,19 +112,11 @@ export class SessionCoreService {
     });
   }
 
-  /**
-   * 결제 완료 처리 및 세션 종료
-   */
+  /** 결제 완료 처리 및 세션 종료 */
   async txFinishSessionByPayment(
     tableSession: TableSession
   ): Promise<PublicSession> {
     return await this.prismaService.$transaction(async (tx) => {
-      await tx.tableSession.update({
-        where: { sessionToken: tableSession.sessionToken },
-        data: { status: TableSessionStatus.PAYMENT_PENDING },
-        omit: SESSION_OMIT,
-      });
-
       const sessionOrders = await tx.order.findMany({
         where: { tableSessionId: tableSession.id },
         include: { orderItems: true },
@@ -140,10 +124,7 @@ export class SessionCoreService {
 
       if (!sessionOrders.length) {
         throw new HttpException(
-          {
-            ...exceptionContentsIs("ORDER_IS_EMPTY"),
-            details: { orders: sessionOrders },
-          },
+          exceptionContentsIs("ORDER_IS_EMPTY"),
           HttpStatus.NOT_FOUND
         );
       }

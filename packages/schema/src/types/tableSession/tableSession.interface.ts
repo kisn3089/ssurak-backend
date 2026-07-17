@@ -7,8 +7,6 @@ export const TableSessionStatus = {
   WAITING_ORDER: "WAITING_ORDER",
   /** 테이블이 활성화되어 주문이 가능한 상태 */
   ACTIVE: "ACTIVE",
-  /** 결제 대기 중인 상태 */
-  PAYMENT_PENDING: "PAYMENT_PENDING",
   /** 결제 완료 또는 만료로 종료된 상태 */
   CLOSED: "CLOSED",
 } as const;

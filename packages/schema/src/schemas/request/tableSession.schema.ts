@@ -43,8 +43,12 @@ export const updateExtendsExpireAtSchema = z
   .object({ status: z.literal("EXTEND_EXPIRES_AT") })
   .strict();
 
+/**
+ * 결제 처리 명령. DB 상태가 아닌 API 명령 리터럴이다
+ * (EXTEND_EXPIRES_AT, REACTIVATE와 동일한 부류) — 처리 결과 세션은 CLOSED가 된다.
+ */
 export const updateSessionPaymentSchema = z
-  .object({ status: z.literal(TableSessionStatus.PAYMENT_PENDING) })
+  .object({ status: z.literal("PAYMENT_PENDING") })
   .strict();
 
 export const updateSessionPayloadSchema = z.discriminatedUnion("status", [

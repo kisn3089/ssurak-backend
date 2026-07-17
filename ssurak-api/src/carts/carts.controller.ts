@@ -51,7 +51,7 @@ export class CartController {
   @Get()
   @DocsCustomerCartGet()
   async getCartList(@Session() session: SessionWithTable): Promise<Cart> {
-    return this.cartService.getCartList(session.sessionToken);
+    return this.cartService.getCart(session.sessionToken);
   }
 
   @Post()

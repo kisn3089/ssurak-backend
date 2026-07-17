@@ -10,7 +10,7 @@ import {
 @Injectable()
 export class AdminService {
   constructor(private readonly prismaService: PrismaService) {}
-  omitPrivate = { id: true, password: true, refreshToken: true } as const;
+  omitPrivate = { id: true, password: true } as const;
 
   async createAdmin(createAdminPayload: CreateAdminPayloadDto) {
     const hashedPassword = await encrypt(createAdminPayload.password);
@@ -40,14 +40,6 @@ export class AdminService {
     return await this.prismaService.admin.update({
       where: { publicId },
       data: updateAdminPayload,
-      omit: this.omitPrivate,
-    });
-  }
-
-  async updateRefreshToken(publicId: string, refreshToken: string) {
-    return await this.prismaService.admin.update({
-      where: { publicId },
-      data: { refreshToken },
       omit: this.omitPrivate,
     });
   }

@@ -10,7 +10,7 @@ import {
 @Injectable()
 export class OwnerService {
   constructor(private readonly prismaService: PrismaService) {}
-  omitPrivate = { id: true, password: true, refreshToken: true } as const;
+  omitPrivate = { id: true, password: true } as const;
 
   async createOwner(
     createOwnerPayload: CreateOwnerPayloadDto
@@ -47,13 +47,10 @@ export class OwnerService {
     });
   }
 
-  async updateRefreshToken(
-    publicId: string,
-    refreshToken: string
-  ): Promise<PublicOwner> {
+  async updateLastSignIn(publicId: string): Promise<PublicOwner> {
     return await this.prismaService.owner.update({
       where: { publicId: publicId },
-      data: { lastLoginAt: new Date(), refreshToken },
+      data: { lastLoginAt: new Date() },
       omit: this.omitPrivate,
     });
   }

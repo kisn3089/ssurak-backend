@@ -1,10 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
-import { Response } from "express";
 import { Injectable } from "@nestjs/common";
 import { TokenPayload, User } from "@ssurak/db";
-import { COOKIE_TABLE } from "@ssurak/db/constants";
-import { responseCookie } from "src/utils/cookies";
 
 @Injectable()
 export class TokenService {
@@ -29,7 +27,8 @@ export class TokenService {
     };
   }
 
-  generateToken(user: User, response: Response, role: TokenPayload["role"]) {
+  /** 토큰 생성만 담당한다 — 쿠키 적용은 세션 등록이 성공한 뒤 호출부에서 처리한다. */
+  generateToken(user: User, role: TokenPayload["role"]) {
     const tokenPayload: TokenPayload = {
       sub: user.publicId.toString(),
       email: user.email,
@@ -38,6 +37,8 @@ export class TokenService {
       iss: this.configService.get("JWT_ISSUER"),
       aud: this.configService.get("JWT_AUDIENCE"),
       typ: `Bearer`,
+      // 같은 초에 발급돼도 토큰 문자열이 유일하도록 보장 (rotation 전제 조건)
+      jti: randomUUID(),
     };
 
     const expiresAt = this.createTokenHelper(
@@ -56,14 +57,12 @@ export class TokenService {
       "JWT_REFRESH_TOKEN_EXPIRATION_MS"
     ).jwt(tokenPayload, "JWT_REFRESH_TOKEN_SECRET");
 
-    responseCookie.set(response, COOKIE_TABLE.REFRESH, refreshToken, {
-      expires: expiresRefreshToken,
-    });
-
-    responseCookie.set(response, COOKIE_TABLE.ACCESS_TOKEN, accessToken, {
-      expires: expiresRefreshToken,
-    });
-
-    return { accessToken, expiresAt, refreshToken, tokenPayload };
+    return {
+      accessToken,
+      expiresAt,
+      refreshToken,
+      refreshExpiresAt: expiresRefreshToken,
+      tokenPayload,
+    };
   }
 }

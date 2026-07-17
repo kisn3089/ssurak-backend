@@ -1,0 +1,81 @@
+# 백엔드 CI — 타입 체크 + 유닛 + 통합/e2e (실제 MySQL·Redis)
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root
+          MYSQL_DATABASE: ssurak
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -pci-root"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        # CI는 requirepass 없이 띄운다 — REDIS_PASSWORD 미설정이면 앱도 AUTH를 보내지 않는다
+        image: redis:7.0-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        # 버전은 package.json의 packageManager 필드를 따른다
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # ConfigModule(../.env)과 vitest e2e 설정(loadEnv)이 읽는 루트 .env 생성
+      - name: Create .env
+        run: |
+          cat > .env <<'EOF'
+          DATABASE_URL=mysql://root:ci-root@127.0.0.1:3306/ssurak
+          REDIS_HOST=127.0.0.1
+          REDIS_PORT=6379
+          JWT_ACCESS_TOKEN_SECRET=ci-access-secret
+          JWT_REFRESH_TOKEN_SECRET=ci-refresh-secret
+          JWT_ACCESS_TOKEN_EXPIRATION_MS=86400000
+          JWT_REFRESH_TOKEN_EXPIRATION_MS=604800000
+          JWT_ISSUER=https://ci.local/auth
+          JWT_AUDIENCE=console
+          ORDER_APP_URL=http://localhost:3000
+          CONSOLE_APP_URL=http://localhost:3001
+          EOF
+
+      # postinstall이 prisma generate까지 수행한다
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations
+        run: pnpm --filter @ssurak/db prisma:deploy
+
+      - name: Typecheck
+        run: |
+          pnpm --filter @ssurak/schema build
+          pnpm --filter @ssurak/ssurak-api exec tsc --noEmit
+
+      - name: Unit tests
+        run: pnpm --filter @ssurak/ssurak-api test
+
+      - name: Integration / e2e tests
+        run: pnpm --filter @ssurak/ssurak-api test:e2e

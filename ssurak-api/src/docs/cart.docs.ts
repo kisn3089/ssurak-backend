@@ -18,7 +18,7 @@ import {
 import { paramsDocs } from "./params.docs";
 
 const meta = {
-  getCart: {
+  getCartByStore: {
     summary: "장바구니 조회",
     ok: { status: 200, description: "장바구니 반환" },
   },
@@ -57,9 +57,9 @@ const meta = {
 
 export const DocsCustomerCartGet = () =>
   applyDecorators(
-    ApiOperation({ summary: meta.getCart.summary }),
+    ApiOperation({ summary: meta.getCartByStore.summary }),
     ApiParam(paramsDocs.sessionToken),
-    ApiResponse({ ...meta.getCart.ok, type: CartDataDto }),
+    ApiResponse({ ...meta.getCartByStore.ok, type: CartDataDto }),
     ApiResponse(meta.unauthorized),
     ApiResponse(meta.notFound)
   );

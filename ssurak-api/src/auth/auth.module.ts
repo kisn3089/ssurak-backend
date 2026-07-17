@@ -4,6 +4,7 @@ import { JwtModule } from "@nestjs/jwt";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./services/auth.service";
 import { TokenService } from "./services/token.service";
+import { AuthSessionService } from "./services/auth-session.service";
 import { LocalStrategy } from "./strategies/local-sign-in.strategy";
 import { JwtStrategy } from "./strategies/jwt.strategy";
 import { JwtRefreshStrategy } from "./strategies/jwt-refresh-strategy";
@@ -15,6 +16,7 @@ import { IdentityModule } from "src/identity/identity.module";
   providers: [
     AuthService,
     TokenService,
+    AuthSessionService,
     LocalStrategy,
     JwtStrategy,
     JwtRefreshStrategy,

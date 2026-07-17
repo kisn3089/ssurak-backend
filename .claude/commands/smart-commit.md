@@ -1,6 +1,6 @@
 ---
 description: Git 변경 내역을 분석하여 논리적으로 그룹화하고 순차적으로 커밋
-allowed-tools: Bash(git:*), Bash(find:*), Bash(ls:*), Read, Glob, Grep
+allowed-tools: Bash(git:*), Bash(find:*), Bash(ls:*), Read, Glob, Grep, Skill
 ---
 
 # Smart Commit - Git 변경 내역 분석 및 논리적 커밋 그룹화
@@ -16,6 +16,16 @@ allowed-tools: Bash(git:*), Bash(find:*), Bash(ls:*), Read, Glob, Grep
 - `git status --short` - 변경된 파일 목록 확인
 - `git diff --stat HEAD` - 변경 통계 확인
 - 새로 추가된 디렉토리가 있다면 `find` 또는 `ls`로 구조 파악
+
+### 1.5단계: 스키마 동기화 검사
+
+변경된 파일에 Zod 스키마(`packages/api/src/schemas/**` 또는
+`packages/schema/src/schemas/**`)가 포함되어 있으면, 커밋 그룹화를 제안하기 전에
+**Skill 도구로 `schema-sync` 스킬을 호출**하여 상대편 저장소와의 드리프트를 검사합니다.
+
+- 드리프트가 발견되면 결과를 사용자에게 보고하고, 그대로 커밋할지 먼저 동기화할지
+  확인을 받습니다.
+- 스키마 변경이 없으면 이 단계를 건너뜁니다.
 
 ### 2단계: 커밋 그룹화 제안
 
