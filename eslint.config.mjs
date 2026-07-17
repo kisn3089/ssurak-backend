@@ -28,7 +28,6 @@ export default tseslint.config(
         process: "readonly",
         Buffer: "readonly",
         URL: "readonly",
-        __dirname: "readonly",
         setTimeout: "readonly",
         setInterval: "readonly",
         fetch: "readonly",
