@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { TokenPayload } from "@ssurak/db";
 import { PrismaService } from "src/prisma/prisma.service";
 
@@ -20,6 +20,8 @@ const MAX_ACTIVE_TOKENS = 5;
 @Injectable()
 export class AuthSessionService {
   constructor(private readonly prismaService: PrismaService) {}
+
+  private readonly logger = new Logger(AuthSessionService.name);
 
   private hashToken(refreshToken: string): string {
     return createHash("sha256").update(refreshToken).digest("hex");
@@ -43,7 +45,11 @@ export class AuthSessionService {
 
     // 정리는 best-effort — 트랜잭션으로 묶으면 deleteMany의 gap lock이
     // 동시 로그인 insert와 데드락을 일으킬 수 있고, 실패해도 로그인엔 영향 없다
-    await this.pruneTokens(role, userId).catch(() => null);
+    await this.pruneTokens(role, userId).catch((error) =>
+      this.logger.error(
+        `세션 정리 실패 (role=${role}, userId=${userId}): ${error}`
+      )
+    );
   }
 
   private async pruneTokens(
