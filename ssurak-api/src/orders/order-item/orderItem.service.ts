@@ -180,9 +180,10 @@ export class OrderItemService {
      * 같은 메뉴의 옵션 부분 업데이트면 페이로드에 없는 그룹은 기존 선택을 유지한다.
      * 메뉴 자체가 바뀌면 기존 스냅샷은 새 메뉴에 유효하지 않으므로 병합하지 않는다.
      */
-    const existingSelections = menuPublicId
-      ? {}
-      : extractSelectionsFromSnapshot(orderItem.optionsSnapshot);
+    const existingSelections =
+      menu.id === orderItem.menuId
+        ? extractSelectionsFromSnapshot(orderItem.optionsSnapshot)
+        : {};
 
     const { optionsPrice, optionsSnapshot } = getValidatedMenuOptionsSnapshot(
       menu,
