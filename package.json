@@ -8,6 +8,7 @@
     "db:generate": "pnpm --filter @ssurak/db prisma:generate",
     "db:build": "pnpm --filter @ssurak/db build",
     "api:dev": "pnpm --filter @ssurak/ssurak-api dev",
+    "test:all": "pnpm --filter @ssurak/ssurak-api test:all",
     "build": "pnpm --filter @ssurak/db build && pnpm --filter @ssurak/ssurak-api build",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,md}\"",
