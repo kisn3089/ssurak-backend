@@ -31,8 +31,8 @@ describe("isSessionExpired", () => {
   });
 
   it("만료 시각이 남은 세션은 false", () => {
-    expect(isSessionExpired(sessionFixture(new Date(Date.now() + 60_000)))).toBe(
-      false
-    );
+    expect(
+      isSessionExpired(sessionFixture(new Date(Date.now() + 60_000)))
+    ).toBe(false);
   });
 });

@@ -85,7 +85,8 @@ const EXCEPTION_CONTENTS = {
   },
   ORDER_STATUS_INVALID_TRANSITION: {
     code: "ORDER_STATUS_INVALID_TRANSITION",
-    message: "주문 상태를 이전 단계로 되돌리거나 같은 상태로 변경할 수 없습니다.",
+    message:
+      "주문 상태를 이전 단계로 되돌리거나 같은 상태로 변경할 수 없습니다.",
   },
   /** ---Order Item--- */
   MENU_OPTIONS_INVALID: {

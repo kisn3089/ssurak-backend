@@ -44,8 +44,7 @@ describe("ZodValidation guard", () => {
     const paramsSchema = z.object({ storeId: z.string().min(5) }).strict();
 
     expectHttpException(
-      () =>
-        runGuard({ params: paramsSchema }, { params: { storeId: "x" } }),
+      () => runGuard({ params: paramsSchema }, { params: { storeId: "x" } }),
       { code: "ZOD_PARAMS_FAILED", status: HttpStatus.BAD_REQUEST }
     );
   });

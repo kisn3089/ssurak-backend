@@ -32,8 +32,8 @@ description:
 | Frontend 저장소                                     | Backend 저장소                                           |
 | --------------------------------------------------- | -------------------------------------------------------- |
 | `packages/api/src/schemas/model/<entity>.schema.ts` | `packages/schema/src/schemas/request/<entity>.schema.ts` |
-| `packages/api/src/schemas/common.ts`                 | `packages/schema/src/schemas/request/common.schema.ts`   |
-| `packages/api/src/schemas/signIn.schema.ts`          | `packages/schema/src/schemas/request/signIn.schema.ts`   |
+| `packages/api/src/schemas/common.ts`                | `packages/schema/src/schemas/request/common.schema.ts`   |
+| `packages/api/src/schemas/signIn.schema.ts`         | `packages/schema/src/schemas/request/signIn.schema.ts`   |
 
 ## 검사 절차
 
@@ -79,13 +79,14 @@ description:
 
 파일 쌍별로 요약 테이블을 먼저 제시합니다:
 
-| 파일 | 상태 | 비고 |
-| --- | --- | --- |
-| table.schema.ts | ✅ IN SYNC | |
-| menu.schema.ts | ⚠️ DRIFT | `.max(50)` vs `.max(30)`, 에러 메시지 상이 |
-| owner.schema.ts | ❌ FRONT ONLY | 백엔드에 파일 없음 |
+| 파일            | 상태          | 비고                                       |
+| --------------- | ------------- | ------------------------------------------ |
+| table.schema.ts | ✅ IN SYNC    |                                            |
+| menu.schema.ts  | ⚠️ DRIFT      | `.max(50)` vs `.max(30)`, 에러 메시지 상이 |
+| owner.schema.ts | ❌ FRONT ONLY | 백엔드에 파일 없음                         |
 
 이어서 DRIFT 항목마다:
+
 - 어떤 export의 어떤 필드가 어떻게 다른지 (양쪽 코드 발췌)
 - 양쪽 마지막 커밋 시점과 제안 동기화 방향
 
