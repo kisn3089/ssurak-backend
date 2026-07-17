@@ -337,39 +337,54 @@ export class OrdersService {
             store: { ownerId: params.ownerId },
           };
 
-    const order = await this.prismaService.order.findFirst({
-      where: whereClause,
-      include: {
-        tableSession: true,
-        store: { select: { publicId: true } },
-        table: { select: { publicId: true, tableNumber: true } },
-      },
-    });
+    // 검증~update 사이 동시 요청이 상태를 바꾸면 검증이 스테일해진다.
+    // update에 읽은 status를 조건으로 걸어 경합을 감지(P2025)하고, 최신 상태로
+    // 1회 재검증해 성공시키거나 도메인 에러를 던진다
+    for (let attempt = 0; ; attempt++) {
+      const order = await this.prismaService.order.findFirst({
+        where: whereClause,
+        include: {
+          tableSession: true,
+          store: { select: { publicId: true } },
+          table: { select: { publicId: true, tableNumber: true } },
+        },
+      });
 
-    const validOrder = validateOrderSessionToWrite(order);
+      const validOrder = validateOrderSessionToWrite(order);
 
-    const nextStatus =
-      typeof data.status === "string" ? data.status : undefined;
-    if (nextStatus) {
-      validateOrderStatusTransition(validOrder.status, nextStatus);
-      data = {
-        ...data,
-        ...buildOrderStatusTimestamps(validOrder, nextStatus),
-      };
+      let updateData = data;
+
+      const nextStatus =
+        typeof data.status === "string" ? data.status : undefined;
+
+      if (nextStatus) {
+        validateOrderStatusTransition(validOrder.status, nextStatus);
+        updateData = {
+          ...data,
+          ...buildOrderStatusTimestamps(validOrder, nextStatus),
+        };
+      }
+
+      try {
+        const updated = await this.prismaService.order.update({
+          where: { id: validOrder.id, status: validOrder.status },
+          data: updateData,
+          ...ORDER_ITEMS_WITH_OMIT_PRIVATE,
+        });
+
+        return {
+          order: updated,
+          subscriber: {
+            storePublicId: validOrder.store.publicId,
+            tablePublicId: validOrder.table.publicId,
+          },
+        };
+      } catch (error) {
+        const isStaleStatus =
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2025";
+        if (!isStaleStatus || attempt >= 1) throw error;
+      }
     }
-
-    const updated = await this.prismaService.order.update({
-      where: { id: validOrder.id },
-      data,
-      ...ORDER_ITEMS_WITH_OMIT_PRIVATE,
-    });
-
-    return {
-      order: updated,
-      subscriber: {
-        storePublicId: validOrder.store.publicId,
-        tablePublicId: validOrder.table.publicId,
-      },
-    };
   }
 }

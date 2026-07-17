@@ -2,9 +2,12 @@ import { HttpStatus, INestApplication } from "@nestjs/common";
 import { OrderStatus, TableSessionStatus } from "@ssurak/db";
 import type Redis from "ioredis";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type Redlock from "redlock";
 import { CartService } from "src/carts/carts.service";
+import { SessionClient } from "src/internal/clients/session.client";
 import { OrdersService } from "src/orders/orders/orders.service";
 import { PrismaService } from "src/prisma/prisma.service";
+import { REDLOCK_CLIENT } from "src/redis/redis.module";
 import { REDIS_CLIENT } from "src/redis/redis.provider";
 import { createTestApp } from "test/helpers/create-test-app";
 import { expectHttpExceptionAsync } from "test/helpers/expect-http-exception";
@@ -194,6 +197,114 @@ describe("OrdersService (통합)", () => {
 
       expect(updated.memo).toBe("빨리 부탁해요");
       expect(updated.status).toBe(OrderStatus.PENDING);
+    });
+  });
+
+  describe("partialUpdateOrder — 동시성", () => {
+    const createOrder = async () => {
+      const session = await createSession(prisma, domain.table);
+      await fillCart(session);
+      const { order } = await ordersService.createOrderByCustomer(session, {});
+      return order;
+    };
+
+    /**
+     * run()의 첫 order.findFirst가 반환된 직후(검증 전) 다른 요청이 먼저
+     * 커밋한 상황을 재현한다. 공유 서비스를 건드리지 않도록, findFirst만
+     * 가로채는 Prisma 프록시를 주입한 별도 OrdersService로 run을 실행한다
+     */
+    const runWithConcurrentCommitAfterFirstRead = async <T>(
+      concurrentUpdate: () => Promise<unknown>,
+      run: (service: OrdersService) => Promise<T>
+    ): Promise<T> => {
+      let intercepted = false;
+
+      const orderDelegate = new Proxy(prisma.order, {
+        get(target, prop) {
+          const value: unknown = Reflect.get(target, prop);
+          if (
+            prop !== "findFirst" ||
+            intercepted ||
+            typeof value !== "function"
+          ) {
+            return value;
+          }
+          intercepted = true;
+          return async (args: unknown) => {
+            const stale: unknown = await value.call(target, args);
+            await concurrentUpdate();
+            return stale;
+          };
+        },
+      });
+
+      const proxiedPrisma = new Proxy(prisma, {
+        get(target, prop) {
+          if (prop === "order") return orderDelegate;
+          return Reflect.get(target, prop);
+        },
+      });
+
+      return await run(
+        new OrdersService(
+          proxiedPrisma,
+          app.get(SessionClient),
+          cartService,
+          app.get<Redlock>(REDLOCK_CLIENT)
+        )
+      );
+    };
+
+    it("검증 통과 후 다른 요청이 먼저 완료 처리하면, 최신 상태로 재검증해 역행을 거부한다", async () => {
+      const order = await createOrder();
+
+      await runWithConcurrentCommitAfterFirstRead(
+        () =>
+          ordersService.partialUpdateOrder(order.publicId, domain.owner.id, {
+            status: OrderStatus.COMPLETED,
+          }),
+        (service) =>
+          expectHttpExceptionAsync(
+            () =>
+              service.partialUpdateOrder(order.publicId, domain.owner.id, {
+                status: OrderStatus.ACCEPTED,
+              }),
+            {
+              code: "ORDER_STATUS_INVALID_TRANSITION",
+              status: HttpStatus.BAD_REQUEST,
+              details: {
+                from: OrderStatus.COMPLETED,
+                to: OrderStatus.ACCEPTED,
+              },
+            }
+          )
+      );
+
+      // 스테일 검증으로 덮어써졌다면 status=ACCEPTED인데 completedAt이 남는다
+      const persisted = await prisma.order.findFirstOrThrow({
+        where: { publicId: order.publicId },
+      });
+      expect(persisted.status).toBe(OrderStatus.COMPLETED);
+      expect(persisted.completedAt).not.toBeNull();
+    });
+
+    it("동시 변경 후에도 여전히 순방향 전이면 재시도로 성공한다", async () => {
+      const order = await createOrder();
+
+      const { order: updated } = await runWithConcurrentCommitAfterFirstRead(
+        () =>
+          ordersService.partialUpdateOrder(order.publicId, domain.owner.id, {
+            status: OrderStatus.ACCEPTED,
+          }),
+        (service) =>
+          service.partialUpdateOrder(order.publicId, domain.owner.id, {
+            status: OrderStatus.COMPLETED,
+          })
+      );
+
+      expect(updated.status).toBe(OrderStatus.COMPLETED);
+      expect(updated.acceptedAt).not.toBeNull();
+      expect(updated.completedAt).not.toBeNull();
     });
   });
 
