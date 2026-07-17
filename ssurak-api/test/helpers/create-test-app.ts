@@ -4,9 +4,7 @@ import cookieParser from "cookie-parser";
 import { AppModule } from "src/app/app.module";
 
 // main.ts와 동일한 BigInt 직렬화 (Prisma BigInt id 대응)
-(BigInt.prototype as unknown as { toJSON(): string }).toJSON = function (
-  this: bigint
-) {
+BigInt.prototype.toJSON = function (this: bigint) {
   return this.toString();
 };
 

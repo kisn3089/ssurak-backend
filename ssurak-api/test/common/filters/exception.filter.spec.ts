@@ -4,8 +4,10 @@ import {
   HttpStatus,
   NotFoundException,
 } from "@nestjs/common";
+import { HttpArgumentsHost } from "@nestjs/common/interfaces";
 import { Prisma } from "@ssurak/db";
 import { describe, expect, it } from "vitest";
+import { mockDeep } from "vitest-mock-extended";
 import { GlobalExceptionFilter } from "src/common/filters/exception.filter";
 
 type CapturedResponse = { status?: number; body?: Record<string, unknown> };
@@ -23,12 +25,12 @@ function catchWith(exception: unknown, url = "/test-path"): CapturedResponse {
       return this;
     },
   };
-  const host = {
-    switchToHttp: () => ({
-      getResponse: () => response,
-      getRequest: () => ({ url }),
-    }),
-  } as unknown as ArgumentsHost;
+  const httpHost = mockDeep<HttpArgumentsHost>();
+  httpHost.getResponse.mockReturnValue(response);
+  httpHost.getRequest.mockReturnValue({ url });
+
+  const host = mockDeep<ArgumentsHost>();
+  host.switchToHttp.mockReturnValue(httpHost);
 
   new GlobalExceptionFilter().catch(exception, host);
   return captured;

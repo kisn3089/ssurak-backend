@@ -1,5 +1,7 @@
 import { ExecutionContext, HttpStatus } from "@nestjs/common";
+import { HttpArgumentsHost } from "@nestjs/common/interfaces";
 import { describe, expect, it } from "vitest";
+import { mockDeep } from "vitest-mock-extended";
 import z from "zod";
 import { ZodValidation } from "src/utils/guards/zod-validation.guard";
 import { expectHttpException } from "test/helpers/expect-http-exception";
@@ -10,10 +12,14 @@ type MutableRequest = {
   query?: unknown;
 };
 
-const contextOf = (request: MutableRequest): ExecutionContext =>
-  ({
-    switchToHttp: () => ({ getRequest: () => request }),
-  }) as unknown as ExecutionContext;
+const contextOf = (request: MutableRequest): ExecutionContext => {
+  const httpHost = mockDeep<HttpArgumentsHost>();
+  httpHost.getRequest.mockReturnValue(request);
+
+  const context = mockDeep<ExecutionContext>();
+  context.switchToHttp.mockReturnValue(httpHost);
+  return context;
+};
 
 const runGuard = (
   schemas: Parameters<typeof ZodValidation>[0],
@@ -79,13 +85,12 @@ describe("ZodValidation guard", () => {
       caught = error;
     }
 
-    expectHttpException(
+    const response = expectHttpException(
       () => {
         throw caught;
       },
       { code: "SIGNIN_FAILED", status: HttpStatus.UNAUTHORIZED }
     );
-    const response = (caught as { getResponse(): object }).getResponse();
     expect(response).not.toHaveProperty("details");
   });
 

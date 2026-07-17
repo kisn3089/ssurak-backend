@@ -69,6 +69,7 @@
     "unplugin-swc": "^1.5.7",
     "vite": "^7.1.10",
     "vite-node": "^3.2.4",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "vitest-mock-extended": "^5.0.0"
   }
 }
