@@ -7,8 +7,9 @@ import {
 } from "src/common/validate/session/alive-session";
 import { expectHttpException } from "test/helpers/expect-http-exception";
 
-const sessionFixture = (expiresAt: Date): TableSession =>
-  ({ expiresAt }) as TableSession;
+const sessionFixture = (expiresAt: Date): Pick<TableSession, "expiresAt"> => ({
+  expiresAt,
+});
 
 describe("isActivateTableOrThrow", () => {
   it("활성 테이블은 통과한다", () => {

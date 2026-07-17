@@ -1,5 +1,4 @@
 import { HttpException, HttpStatus } from "@nestjs/common";
-import { Menu } from "@ssurak/db";
 import { exceptionContentsIs } from "src/common/constants/exceptionContents";
 import { ExtendedMap } from "src/utils/helper/extendMap";
 import { menuOptionsPayloadSchema } from "@ssurak/schema";
@@ -11,7 +10,7 @@ import type {
   OrderItemOptionSnapshot,
 } from "@ssurak/schema";
 
-type JsonMenuOptions = Pick<Menu, "requiredOptions" | "customOptions">;
+type JsonMenuOptions = { requiredOptions: unknown; customOptions: unknown };
 export type PayloadOptions = {
   requiredOptions?: Record<string, string>;
   customOptions?: Record<string, string>;

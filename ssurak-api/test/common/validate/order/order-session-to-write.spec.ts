@@ -1,32 +1,17 @@
 import { HttpStatus } from "@nestjs/common";
 import { describe, expect, it } from "vitest";
-import {
-  Order,
-  OrderStatus,
-  TableSession,
-  TableSessionStatus,
-} from "@ssurak/db";
+import { OrderStatus, TableSessionStatus } from "@ssurak/db";
 import { validateOrderSessionToWrite } from "src/common/validate/order/order-session-to-write";
 import { expectHttpException } from "test/helpers/expect-http-exception";
 
-type OrderWithSession = Order & { tableSession: TableSession };
-
+// validator가 요구하는 최소 필드만 담는다 — assertion 없이 타입이 맞는다
 const orderFixture = (
   orderStatus: OrderStatus,
   sessionStatus: TableSessionStatus
-): OrderWithSession =>
-  ({
-    id: 1n,
-    publicId: "order-public-id",
-    status: orderStatus,
-    tableSession: {
-      id: 1n,
-      publicId: "session-public-id",
-      status: sessionStatus,
-      sessionToken: "session-token",
-      expiresAt: new Date(Date.now() + 60_000),
-    },
-  }) as OrderWithSession;
+) => ({
+  status: orderStatus,
+  tableSession: { status: sessionStatus },
+});
 
 describe("validateOrderSessionToWrite", () => {
   it("주문이 없으면 NOT_FOUND(404)", () => {

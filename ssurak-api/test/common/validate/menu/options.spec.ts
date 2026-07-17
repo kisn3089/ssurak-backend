@@ -155,7 +155,7 @@ describe("getValidatedMenuOptionsSnapshot", () => {
     const malformedMenu = {
       requiredOptions: { 사이즈: { 잘못된: "구조" } },
       customOptions: null,
-    } as unknown as Parameters<typeof getValidatedMenuOptionsSnapshot>[0];
+    };
 
     expect(() => getValidatedMenuOptionsSnapshot(malformedMenu, {})).toThrow();
   });

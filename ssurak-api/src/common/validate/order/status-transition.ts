@@ -23,8 +23,7 @@ export function validateOrderStatusTransition(
   const isForward =
     current !== OrderStatus.CANCELLED &&
     (next === OrderStatus.CANCELLED ||
-      ORDER_STATUS_RANK[next as ProgressStatus] >
-        ORDER_STATUS_RANK[current as ProgressStatus]);
+      ORDER_STATUS_RANK[next] > ORDER_STATUS_RANK[current]);
 
   if (isForward) return;
 
