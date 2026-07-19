@@ -24,16 +24,14 @@ export class MenuService {
     });
   }
 
-  async getMenuList<T extends Prisma.MenuFindManyArgs>(
-    args: Prisma.SelectSubset<T, Prisma.MenuFindManyArgs>
-  ): Promise<Prisma.MenuGetPayload<T>[]> {
-    return await this.prismaService.menu.findMany(args);
-  }
-
-  async getMenuUnique<T extends Prisma.MenuFindFirstOrThrowArgs>(
-    args: Prisma.SelectSubset<T, Prisma.MenuFindFirstOrThrowArgs>
-  ): Promise<Prisma.MenuGetPayload<T>> {
-    return await this.prismaService.menu.findFirstOrThrow(args);
+  async getMenuUnique(storeId: string, menuId: string): Promise<PublicMenu> {
+    return await this.prismaService.menu.findFirstOrThrow({
+      where: {
+        publicId: menuId,
+        category: { store: { publicId: storeId } },
+      },
+      omit: OMIT_MENU_PRIVATE,
+    });
   }
 
   async partialUpdateMenu(

@@ -20,7 +20,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(jwt: TokenPayload): Promise<PrivateRequestUser> {
     const user = await this.authService.findUserByRole({
       role: jwt.role,
-      where: { publicId: jwt.sub },
+      sub: jwt.sub,
     });
 
     return { info: user, jwt };

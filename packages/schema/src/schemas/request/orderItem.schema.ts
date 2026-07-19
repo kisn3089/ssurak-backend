@@ -12,6 +12,6 @@ export const createOrderItemPayloadSchema = z
   })
   .strict();
 
-export const partialUpdateOrderItemPayloadSchema = createOrderItemPayloadSchema
+export const updateOrderItemPayloadSchema = createOrderItemPayloadSchema
   .partial()
   .strict();

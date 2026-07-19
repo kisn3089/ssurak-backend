@@ -9,7 +9,6 @@ import {
   CreateOrderItemPayloadDto,
   UpdateOrderItemPayloadDto,
 } from "src/dto/request/order-item.dto";
-import { Tx } from "src/utils/helper/transactionPipe";
 import { validateOrderSessionToWrite } from "src/common/validate/order/order-session-to-write";
 import { validateMenuAvailableOrThrow } from "src/common/validate/menu/available";
 import { MENU_VALIDATION_FIELDS_SELECT } from "src/common/query/menu-query.const";
@@ -35,7 +34,11 @@ type MetaInfoList = {
 @Injectable()
 export class OrderItemService {
   constructor(private readonly prismaService: PrismaService) {}
-  readonly omitPrivate = { id: true, orderId: true, menuId: true } as const;
+  private readonly omitPrivate = {
+    id: true,
+    orderId: true,
+    menuId: true,
+  } as const;
 
   async createOrderItem(
     orderId: string,
@@ -96,18 +99,24 @@ export class OrderItemService {
     };
   }
 
-  async getOrderItemList<T extends Prisma.OrderItemFindManyArgs>(
-    args: Prisma.SelectSubset<T, Prisma.OrderItemFindManyArgs>
-  ): Promise<Prisma.OrderItemGetPayload<T>[]> {
-    return await this.prismaService.orderItem.findMany(args);
+  async getOrderItemsByOrder(
+    orderId: string,
+    ownerId: bigint
+  ): Promise<PublicOrderItem<"Wide">[]> {
+    return await this.prismaService.orderItem.findMany({
+      where: { order: { publicId: orderId, store: { ownerId } } },
+      omit: this.omitPrivate,
+    });
   }
 
-  async getOrderItemUnique<T extends Prisma.OrderItemFindFirstOrThrowArgs>(
-    args: Prisma.SelectSubset<T, Prisma.OrderItemFindFirstOrThrowArgs>,
-    tx?: Tx
-  ): Promise<Prisma.OrderItemGetPayload<T>> {
-    const service = tx ?? this.prismaService;
-    return await service.orderItem.findFirstOrThrow(args);
+  async getOrderItemForOwner(
+    orderItemId: string,
+    ownerId: bigint
+  ): Promise<PublicOrderItem<"Wide">> {
+    return await this.prismaService.orderItem.findFirstOrThrow({
+      where: { publicId: orderItemId, order: { store: { ownerId } } },
+      omit: this.omitPrivate,
+    });
   }
 
   async partialUpdateOrderItem(

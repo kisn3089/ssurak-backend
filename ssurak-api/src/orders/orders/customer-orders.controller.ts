@@ -34,7 +34,6 @@ import {
 } from "src/docs/order.docs";
 import { CreateCustomerOrderPayloadDto } from "src/dto/request/order.dto";
 import { OrdersService } from "./orders.service";
-import { ORDER_ITEMS_WITH_OMIT_PRIVATE } from "src/common/query/order-item-query.const";
 import { responseCookie } from "src/utils/cookies";
 import { OrderEventsService } from "src/realtime/order-events.service";
 import { ORDER_STATUS_MESSAGE_MAP } from "./orders-status-notice-message.const";
@@ -98,10 +97,7 @@ export class CustomerOrdersController {
   async list(
     @Session() tableSession: TableSession
   ): Promise<PublicOrderWithItem<"Wide">[]> {
-    return await this.orderService.getOrderList({
-      where: { tableSessionId: tableSession.id },
-      ...ORDER_ITEMS_WITH_OMIT_PRIVATE,
-    });
+    return await this.orderService.getOrdersBySession(tableSession.id);
   }
 
   @Get(":orderId")
@@ -111,10 +107,7 @@ export class CustomerOrdersController {
     @Session() tableSession: TableSession,
     @Param("orderId") orderId: string
   ): Promise<PublicOrderWithItem<"Wide">> {
-    return await this.orderService.getOrderUnique({
-      where: { publicId: orderId, tableSessionId: tableSession.id },
-      ...ORDER_ITEMS_WITH_OMIT_PRIVATE,
-    });
+    return await this.orderService.getOrderForSession(orderId, tableSession.id);
   }
 
   @Delete(":orderId")

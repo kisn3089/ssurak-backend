@@ -17,7 +17,7 @@ import {
   createOrderItemPayloadSchema,
   orderIdParamsSchema,
   orderItemIdParamsSchema,
-  partialUpdateOrderItemPayloadSchema,
+  updateOrderItemPayloadSchema,
 } from "@ssurak/schema";
 import type { PublicOrderItem, SyncNotice } from "@ssurak/db";
 import {
@@ -76,12 +76,7 @@ export class OrderItemController {
     @Client() client: Owner,
     @Param("orderId") orderId: string
   ): Promise<PublicOrderItem<"Wide">[]> {
-    return await this.orderItemService.getOrderItemList({
-      where: {
-        order: { publicId: orderId, store: { ownerId: client.id } },
-      },
-      omit: this.orderItemService.omitPrivate,
-    });
+    return await this.orderItemService.getOrderItemsByOrder(orderId, client.id);
   }
 
   @Get("order-items/:orderItemId")
@@ -94,13 +89,10 @@ export class OrderItemController {
     @Client() client: Owner,
     @Param("orderItemId") orderItemId: string
   ): Promise<PublicOrderItem<"Wide">> {
-    return await this.orderItemService.getOrderItemUnique({
-      where: {
-        publicId: orderItemId,
-        order: { store: { ownerId: client.id } },
-      },
-      omit: this.orderItemService.omitPrivate,
-    });
+    return await this.orderItemService.getOrderItemForOwner(
+      orderItemId,
+      client.id
+    );
   }
 
   @Patch("order-items/:orderItemId")
@@ -108,7 +100,7 @@ export class OrderItemController {
     OrderItemAccessGuard,
     ZodValidation({
       params: orderItemIdParamsSchema,
-      body: partialUpdateOrderItemPayloadSchema,
+      body: updateOrderItemPayloadSchema,
     })
   )
   @DocsOrderItemUpdate()

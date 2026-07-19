@@ -47,7 +47,6 @@ import {
 import { JwtAuthGuard } from "src/auth/guards/jwt-auth.guard";
 import { OrderAccessGuard } from "src/utils/guards/order-access.guard";
 import { TableAccessGuard } from "src/utils/guards/table-access.guard";
-import { ORDER_ITEMS_WITH_OMIT_PRIVATE } from "src/common/query/order-item-query.const";
 import { ORDER_STATUS_MESSAGE_MAP } from "./orders-status-notice-message.const";
 
 @ApiTags("Order")
@@ -83,10 +82,7 @@ export class OrdersController {
     @Client() client: Owner,
     @Param("storeId") storeId: string
   ): Promise<PublicOrderWithItem<"Wide">[]> {
-    return await this.orderService.getOrderList({
-      where: { store: { publicId: storeId, ownerId: client.id } },
-      ...ORDER_ITEMS_WITH_OMIT_PRIVATE,
-    });
+    return await this.orderService.getOrdersByStore(storeId, client.id);
   }
 
   /** 특정 주문 조회 */
@@ -97,10 +93,7 @@ export class OrdersController {
     @Client() client: Owner,
     @Param("orderId") orderId: string
   ): Promise<PublicOrderWithItem<"Wide">> {
-    return await this.orderService.getOrderUnique({
-      where: { publicId: orderId, store: { ownerId: client.id } },
-      ...ORDER_ITEMS_WITH_OMIT_PRIVATE,
-    });
+    return await this.orderService.getOrderForOwner(orderId, client.id);
   }
 
   /** 특정 주문 부분 수정 */
@@ -226,11 +219,6 @@ export class OrdersController {
     @Client() client: Owner,
     @Param("tableId") tableId: string
   ): Promise<PublicOrderWithItem<"Wide">[]> {
-    return await this.orderService.getOrderList({
-      where: {
-        table: { publicId: tableId, store: { ownerId: client.id } },
-      },
-      ...ORDER_ITEMS_WITH_OMIT_PRIVATE,
-    });
+    return await this.orderService.getOrdersByTable(tableId, client.id);
   }
 }

@@ -16,9 +16,9 @@ import { exceptionContentsIs } from "src/common/constants/exceptionContents";
 import { OwnerService } from "src/identity/owner/owner.service";
 import { AdminService } from "src/identity/admin/admin.service";
 
-type FindUserByRoleParams =
-  | { role: "owner"; where: Prisma.OwnerWhereInput }
-  | { role: "admin"; where: Prisma.AdminWhereInput };
+type FindUserByRoleParams = { role: TokenPayload["role"] } & (
+  { sub: string; email?: never } | { sub?: never; email: string }
+);
 
 @Injectable()
 export class AuthService {
@@ -66,7 +66,7 @@ export class AuthService {
     refreshToken: string,
     { role, sub }: TokenPayload
   ): Promise<User> {
-    const user = await this.findUserByRole({ role, where: { publicId: sub } });
+    const user = await this.findUserByRole({ role, sub });
 
     // 일치한 토큰은 소비되고 곧바로 새 토큰이 발급된다(rotation)
     const authenticated = await this.authSessionService.consume(
@@ -84,15 +84,19 @@ export class AuthService {
     return user;
   }
 
-  async findUserByRole({ role, where }: FindUserByRoleParams): Promise<User> {
+  async findUserByRole({
+    role,
+    sub,
+    email,
+  }: FindUserByRoleParams): Promise<User> {
     try {
       switch (role) {
         case "owner": {
-          return await this.ownerService.getUnique({ where });
+          return await this.ownerService.getOwnerUniqueAllInclude(sub, email);
         }
 
         case "admin":
-          return await this.adminService.getUnique({ where });
+          return await this.adminService.getAdminUniqueAllInclude(sub, email);
         default:
           throw new HttpException(
             exceptionContentsIs("INVALID_ROLE"),
@@ -132,7 +136,7 @@ export class AuthService {
     role: TokenPayload["role"]
   ): Promise<User> {
     try {
-      const user = await this.findUserByRole({ role, where: { email } });
+      const user = await this.findUserByRole({ role, email });
 
       const isCorrectPassword = await comparePlainToEncrypted(
         password,

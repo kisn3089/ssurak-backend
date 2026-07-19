@@ -17,11 +17,6 @@ import { SessionService } from "./session.service";
 import { PublicSessionWithTableDto } from "src/dto/response/session.dto";
 import { PublicTableSessionDto } from "src/dto/response/table.dto";
 import { StoreAccessGuard } from "src/utils/guards/store-access.guard";
-import {
-  ORDER_WITH_ITEMS_RECORD,
-  SESSION_OMIT,
-} from "src/common/query/session-query.const";
-import { TABLE_OMIT } from "src/common/query/table-query.const";
 import { JwtAuthGuard } from "src/auth/guards/jwt-auth.guard";
 
 export type UpdateTableSessionDto = z.infer<typeof updateSessionPayloadSchema>;
@@ -41,14 +36,7 @@ export class SessionController {
   async list(
     @Param("storeId") storeId: string
   ): Promise<PublicSessionWithTableDto[]> {
-    const sessions = await this.sessionService.getSessionList({
-      where: { table: { store: { publicId: storeId } } },
-      omit: SESSION_OMIT,
-      include: {
-        table: { omit: TABLE_OMIT },
-        orders: ORDER_WITH_ITEMS_RECORD,
-      },
-    });
+    const sessions = await this.sessionService.getSessionList(storeId);
     return PublicSessionWithTableDto.schema.array().parse(sessions);
   }
 
@@ -60,17 +48,7 @@ export class SessionController {
     @Param("sessionId") sessionId: string
   ): Promise<PublicSessionWithTableDto> {
     return PublicSessionWithTableDto.schema.parse(
-      await this.sessionService.getSessionUnique({
-        where: {
-          publicId: sessionId,
-          table: { store: { publicId: storeId } },
-        },
-        omit: SESSION_OMIT,
-        include: {
-          table: { omit: TABLE_OMIT },
-          orders: ORDER_WITH_ITEMS_RECORD,
-        },
-      })
+      await this.sessionService.getSessionUniqueByOwner({ sessionId, storeId })
     );
   }
 

@@ -48,6 +48,7 @@ const booleanStringSchema = z
   .enum(["true", "false"])
   .transform((v) => v === "true");
 
+export type TableListQuery = z.infer<typeof tableListQuerySchema>;
 export const tableListQuerySchema = z.object({
   isActive: booleanStringSchema.optional(),
 });

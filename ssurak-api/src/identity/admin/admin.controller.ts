@@ -55,10 +55,7 @@ export class AdminController {
   @Get()
   @DocsAdminGetList()
   async getList(@Client() admin: Admin): Promise<PublicAdminDto[]> {
-    const admins = await this.adminService.getList({
-      where: { id: admin.id },
-      omit: this.adminService.omitPrivate,
-    });
+    const admins = await this.adminService.getAdminList(admin.id);
     return PublicAdminDto.schema.array().parse(admins);
   }
 
@@ -67,10 +64,7 @@ export class AdminController {
   @DocsAdminGetUnique()
   async getUnique(@Param("adminId") adminId: string): Promise<PublicAdminDto> {
     return PublicAdminDto.schema.parse(
-      await this.adminService.getUnique({
-        where: { publicId: adminId },
-        omit: this.adminService.omitPrivate,
-      })
+      await this.adminService.getAdminUniqueById(adminId)
     );
   }
 

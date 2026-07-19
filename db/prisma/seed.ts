@@ -115,7 +115,7 @@ async function main() {
     categoryMapByStore.set(store.id, new Map(cats.map((c) => [c.name, c.id])));
   }
 
-  const [demoMenus, testMenus] = [demoStore, testStore].map((store, index) =>
+  const allMenus = [demoStore, testStore].flatMap((store, index) =>
     menuSeeds.map(({ category, ...rest }) => ({
       ...rest,
       publicId: `${rest.publicId}${index}`,
@@ -123,7 +123,7 @@ async function main() {
     }))
   );
   await prisma.menu.createMany({
-    data: [...demoMenus, ...testMenus],
+    data: allMenus,
     skipDuplicates: true, // 중복 무시
   });
   console.log("✅ Menus created");

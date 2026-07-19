@@ -61,6 +61,7 @@ export const createMenuPayloadSchema = z
   .object({
     name: z
       .string()
+      .trim()
       .min(1, "메뉴 이름은 필수입니다.")
       .max(30, "메뉴 이름은 최대 30자까지 가능합니다."),
     price: z.number().min(0, "메뉴 가격은 0원 이상이어야 합니다."),
@@ -71,11 +72,10 @@ export const createMenuPayloadSchema = z
     imageUrl: z.string().url("유효한 이미지 URL이어야 합니다.").optional(),
     categoryId: commonSchema.cuid2("Category"),
     sortOrder: z.number().min(0, "정렬 순서는 0 이상이어야 합니다.").optional(),
+    isAvailable: z.boolean().default(true),
     requiredOptions: requiredOptionsSchema.optional(),
     customOptions: customOptionsSchema.optional(),
   })
   .strict();
 
-export const updateMenuPayloadSchema = createMenuPayloadSchema
-  .extend({ isAvailable: z.boolean() })
-  .partial();
+export const updateMenuPayloadSchema = createMenuPayloadSchema.partial();

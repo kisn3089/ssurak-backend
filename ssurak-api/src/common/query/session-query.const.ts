@@ -1,4 +1,4 @@
-import { TableSessionStatus } from "@ssurak/db";
+import { Prisma, TableSessionStatus } from "@ssurak/db";
 
 /** Statuses */
 export const ALIVE_SESSION_STATUSES = [
@@ -29,9 +29,13 @@ export const INCLUDE_TABLE = {
 
 const AVAILABLE_MENU_FILTER = { deletedAt: null } as const;
 export const OMIT_MENU_PRIVATE = { id: true, categoryId: true } as const;
-export const OMIT_CATEGORY_PRIVATE = { id: true, storeId: true } as const;
+// sortOrder 동률(기본값 0) 시 생성 순서로 결정적 정렬 보장
+const CATEGORY_ORDER_BY: Prisma.CategoryOrderByWithRelationInput[] = [
+  { sortOrder: "asc" },
+  { id: "asc" },
+];
 export const CATEGORIES = {
-  orderBy: { sortOrder: "asc" },
+  orderBy: CATEGORY_ORDER_BY,
   include: {
     menus: {
       where: AVAILABLE_MENU_FILTER,

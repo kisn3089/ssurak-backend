@@ -59,7 +59,7 @@ export class WsAuthService {
 
       const user = await this.authService.findUserByRole({
         role: payload.role,
-        where: { publicId: payload.sub },
+        sub: payload.sub,
       });
 
       return { kind: "admin", userId: user.id, role: payload.role };
