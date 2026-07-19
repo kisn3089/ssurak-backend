@@ -5,6 +5,7 @@ import {
   OrderStatus,
   Owner,
   Prisma,
+  PublicOrderWithItem,
   SessionWithTable,
   TableSessionStatus,
 } from "@ssurak/db";
@@ -292,16 +293,53 @@ export class OrdersService {
     });
   }
 
-  async getOrderList<T extends Prisma.OrderFindManyArgs>(
-    args: Prisma.SelectSubset<T, Prisma.OrderFindManyArgs>
-  ): Promise<Prisma.OrderGetPayload<T>[]> {
-    return await this.prismaService.order.findMany(args);
+  async getOrdersByStore(
+    storeId: string,
+    ownerId: bigint
+  ): Promise<PublicOrderWithItem<"Wide">[]> {
+    return await this.prismaService.order.findMany({
+      where: { store: { publicId: storeId, ownerId } },
+      ...ORDER_ITEMS_WITH_OMIT_PRIVATE,
+    });
   }
 
-  async getOrderUnique<T extends Prisma.OrderFindFirstOrThrowArgs>(
-    args: Prisma.SelectSubset<T, Prisma.OrderFindFirstOrThrowArgs>
-  ): Promise<Prisma.OrderGetPayload<T>> {
-    return await this.prismaService.order.findFirstOrThrow(args);
+  async getOrdersByTable(
+    tableId: string,
+    ownerId: bigint
+  ): Promise<PublicOrderWithItem<"Wide">[]> {
+    return await this.prismaService.order.findMany({
+      where: { table: { publicId: tableId, store: { ownerId } } },
+      ...ORDER_ITEMS_WITH_OMIT_PRIVATE,
+    });
+  }
+
+  async getOrdersBySession(
+    tableSessionId: bigint
+  ): Promise<PublicOrderWithItem<"Wide">[]> {
+    return await this.prismaService.order.findMany({
+      where: { tableSessionId },
+      ...ORDER_ITEMS_WITH_OMIT_PRIVATE,
+    });
+  }
+
+  async getOrderForOwner(
+    orderId: string,
+    ownerId: bigint
+  ): Promise<PublicOrderWithItem<"Wide">> {
+    return await this.prismaService.order.findFirstOrThrow({
+      where: { publicId: orderId, store: { ownerId } },
+      ...ORDER_ITEMS_WITH_OMIT_PRIVATE,
+    });
+  }
+
+  async getOrderForSession(
+    orderId: string,
+    tableSessionId: bigint
+  ): Promise<PublicOrderWithItem<"Wide">> {
+    return await this.prismaService.order.findFirstOrThrow({
+      where: { publicId: orderId, tableSessionId },
+      ...ORDER_ITEMS_WITH_OMIT_PRIVATE,
+    });
   }
 
   async partialUpdateOrder(

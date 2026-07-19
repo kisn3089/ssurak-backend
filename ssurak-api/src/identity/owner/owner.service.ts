@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { encrypt } from "src/utils/lib/crypt";
-import { Prisma, PublicOwner } from "@ssurak/db";
+import { Owner, PublicOwner } from "@ssurak/db";
 import { PrismaService } from "src/prisma/prisma.service";
 import {
   CreateOwnerPayloadDto,
@@ -24,16 +24,24 @@ export class OwnerService {
     return createdOwner;
   }
 
-  async getList<T extends Prisma.OwnerFindManyArgs>(
-    args: Prisma.SelectSubset<T, Prisma.OwnerFindManyArgs>
-  ): Promise<Prisma.OwnerGetPayload<T>[]> {
-    return await this.prismaService.owner.findMany(args);
+  async getOwnerList(ownerId: bigint): Promise<PublicOwner[]> {
+    return await this.prismaService.owner.findMany({
+      where: { id: ownerId },
+      omit: this.omitPrivate,
+    });
   }
 
-  async getUnique<T extends Prisma.OwnerFindFirstOrThrowArgs>(
-    args: Prisma.SelectSubset<T, Prisma.OwnerFindFirstOrThrowArgs>
-  ): Promise<Prisma.OwnerGetPayload<T>> {
-    return await this.prismaService.owner.findFirstOrThrow(args);
+  async getOwnerUniqueById(ownerId: string): Promise<PublicOwner> {
+    return await this.prismaService.owner.findFirstOrThrow({
+      where: { publicId: ownerId },
+      omit: this.omitPrivate,
+    });
+  }
+
+  async getOwnerUniqueAllInclude(id?: string, email?: string): Promise<Owner> {
+    return await this.prismaService.owner.findFirstOrThrow({
+      where: { publicId: id, email },
+    });
   }
 
   async partialUpdateOwner(

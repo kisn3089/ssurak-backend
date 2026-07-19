@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { encrypt } from "src/utils/lib/crypt";
 import { PrismaService } from "src/prisma/prisma.service";
-import { Prisma } from "@ssurak/db";
+import { PublicAdmin } from "@ssurak/db";
 import {
   CreateAdminPayloadDto,
   UpdateAdminPayloadDto,
@@ -10,7 +10,7 @@ import {
 @Injectable()
 export class AdminService {
   constructor(private readonly prismaService: PrismaService) {}
-  omitPrivate = { id: true, password: true } as const;
+  private readonly omitPrivate = { id: true, password: true } as const;
 
   async createAdmin(createAdminPayload: CreateAdminPayloadDto) {
     const hashedPassword = await encrypt(createAdminPayload.password);
@@ -21,16 +21,24 @@ export class AdminService {
     return createdAdmin;
   }
 
-  async getList<T extends Prisma.AdminFindManyArgs>(
-    args: Prisma.SelectSubset<T, Prisma.AdminFindManyArgs>
-  ): Promise<Prisma.AdminGetPayload<T>[]> {
-    return await this.prismaService.admin.findMany(args);
+  async getAdminList(id: bigint): Promise<PublicAdmin[]> {
+    return await this.prismaService.admin.findMany({
+      where: { id },
+      omit: this.omitPrivate,
+    });
   }
 
-  async getUnique<T extends Prisma.AdminFindFirstOrThrowArgs>(
-    args: Prisma.SelectSubset<T, Prisma.AdminFindFirstOrThrowArgs>
-  ): Promise<Prisma.AdminGetPayload<T>> {
-    return await this.prismaService.admin.findFirstOrThrow(args);
+  async getAdminUniqueById(adminId: string): Promise<PublicAdmin> {
+    return await this.prismaService.admin.findFirstOrThrow({
+      where: { publicId: adminId },
+      omit: this.omitPrivate,
+    });
+  }
+
+  async getAdminUniqueAllInclude(id?: string, email?: string) {
+    return await this.prismaService.admin.findFirstOrThrow({
+      where: { publicId: id, email },
+    });
   }
 
   async partialUpdateAdmin(

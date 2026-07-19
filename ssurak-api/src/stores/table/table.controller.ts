@@ -23,6 +23,7 @@ import {
   createTablePayloadSchema,
   storeIdAndTableIdParamsSchema,
   storeIdParamsSchema,
+  type TableListQuery,
   tableListQuerySchema,
   updateTablePayloadSchema,
 } from "@ssurak/schema";
@@ -34,7 +35,6 @@ import {
 } from "src/dto/request/table.dto";
 import { StoreAccessGuard } from "src/utils/guards/store-access.guard";
 import { JwtAuthGuard } from "src/auth/guards/jwt-auth.guard";
-import z from "zod";
 
 @ApiTags("Table")
 @ApiBearerAuth()
@@ -65,16 +65,9 @@ export class TableController {
   @DocsTableGetList()
   async list(
     @Param("storeId") storeId: string,
-    @Query() query?: z.infer<typeof tableListQuerySchema>
+    @Query() query?: TableListQuery
   ): Promise<PublicTable[]> {
-    return await this.tableService.getTableList({
-      where: {
-        store: { publicId: storeId },
-        ...(query?.isActive !== undefined ? { isActive: query.isActive } : {}),
-      },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      omit: this.tableService.omitPrivate,
-    });
+    return await this.tableService.getTableList(storeId, query);
   }
 
   @Get(":tableId")
@@ -84,10 +77,7 @@ export class TableController {
     @Param("storeId") storeId: string,
     @Param("tableId") tableId: string
   ): Promise<PublicTable> {
-    return await this.tableService.getTableUnique({
-      where: { publicId: tableId, store: { publicId: storeId } },
-      omit: this.tableService.omitPrivate,
-    });
+    return await this.tableService.getTableUnique({ storeId, tableId });
   }
 
   @Patch(":tableId")

@@ -1,8 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import {
   TableSession,
-  Prisma,
   PublicSession,
+  PublicSessionWithTable,
   SessionWithTable,
   TableWithStoreContext,
 } from "@ssurak/db";
@@ -16,9 +16,12 @@ import {
   INCLUDE_TABLE,
   INCLUDE_TABLE_STORE_AVAILABLE_MENUS,
   ALIVE_SESSION_STATUSES,
+  SESSION_OMIT,
+  ORDER_WITH_ITEMS_RECORD,
 } from "src/common/query/session-query.const";
 import { SessionClient } from "src/internal/clients/session.client";
 import { SessionIdentifier } from "src/internal/services/session-core.service";
+import { TABLE_OMIT } from "src/common/query/table-query.const";
 
 type StoreIdAndSessionIdParams = {
   storeId: string;
@@ -42,28 +45,56 @@ export class SessionService {
     });
   }
 
-  async getSessionList<T extends Prisma.TableSessionFindManyArgs>(
-    args: Prisma.SelectSubset<T, Prisma.TableSessionFindManyArgs>
-  ): Promise<Prisma.TableSessionGetPayload<T>[]> {
-    return await this.prismaService.tableSession.findMany(args);
+  async getSessionList(
+    storeId: string
+  ): Promise<PublicSessionWithTable<"Wide">[]> {
+    return await this.prismaService.tableSession.findMany({
+      where: { table: { store: { publicId: storeId } } },
+      omit: SESSION_OMIT,
+      include: {
+        table: { omit: TABLE_OMIT },
+        orders: ORDER_WITH_ITEMS_RECORD,
+      },
+    });
   }
 
-  async getSessionUnique<T extends Prisma.TableSessionFindFirstOrThrowArgs>(
-    args: Prisma.SelectSubset<T, Prisma.TableSessionFindFirstOrThrowArgs>
-  ): Promise<Prisma.TableSessionGetPayload<T>> {
-    return await this.prismaService.tableSession.findFirstOrThrow(args);
+  async getSessionUniqueByOwner({
+    sessionId,
+    storeId,
+  }: StoreIdAndSessionIdParams): Promise<PublicSessionWithTable<"Wide">> {
+    return await this.prismaService.tableSession.findFirstOrThrow({
+      where: {
+        publicId: sessionId,
+        table: { store: { publicId: storeId } },
+      },
+      omit: SESSION_OMIT,
+      include: {
+        table: { omit: TABLE_OMIT },
+        orders: ORDER_WITH_ITEMS_RECORD,
+      },
+    });
   }
 
   async getSessionAndPartialUpdate(
     { sessionId, storeId }: StoreIdAndSessionIdParams,
     updateSessionPayload: UpdateTableSessionDto
   ): Promise<PublicSession> {
-    const activeSession = await this.getSessionUnique({
-      where: { publicId: sessionId, table: { store: { publicId: storeId } } },
-      include: INCLUDE_TABLE,
+    const activeSession = await this.getSessionByOwner({
+      sessionId,
+      storeId,
     });
 
     return await this.txableUpdateSession(activeSession, updateSessionPayload);
+  }
+
+  async getSessionByOwner({
+    sessionId,
+    storeId,
+  }: StoreIdAndSessionIdParams): Promise<SessionWithTable> {
+    return await this.prismaService.tableSession.findFirstOrThrow({
+      where: { publicId: sessionId, table: { store: { publicId: storeId } } },
+      include: INCLUDE_TABLE,
+    });
   }
 
   async txableUpdateSession(

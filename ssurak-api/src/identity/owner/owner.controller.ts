@@ -55,10 +55,7 @@ export class OwnerController {
   @Get()
   @DocsOwnerGetList()
   async list(@Client() owner: Owner): Promise<PublicOwnerDto[]> {
-    const owners = await this.ownerService.getList({
-      where: { id: owner.id },
-      omit: this.ownerService.omitPrivate,
-    });
+    const owners = await this.ownerService.getOwnerList(owner.id);
     return PublicOwnerDto.schema.array().parse(owners);
   }
 
@@ -67,10 +64,7 @@ export class OwnerController {
   @DocsOwnerGetUnique()
   async unique(@Param("ownerId") ownerId: string): Promise<PublicOwnerDto> {
     return PublicOwnerDto.schema.parse(
-      await this.ownerService.getUnique({
-        where: { publicId: ownerId },
-        omit: this.ownerService.omitPrivate,
-      })
+      await this.ownerService.getOwnerUniqueById(ownerId)
     );
   }
 

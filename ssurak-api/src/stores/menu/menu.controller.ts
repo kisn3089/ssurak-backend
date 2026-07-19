@@ -34,10 +34,6 @@ import {
 } from "src/dto/request/menu.dto";
 import { StoreAccessGuard } from "src/utils/guards/store-access.guard";
 import { JwtAuthGuard } from "src/auth/guards/jwt-auth.guard";
-import {
-  CATEGORIES,
-  OMIT_CATEGORY_PRIVATE,
-} from "src/common/query/session-query.const";
 import { CategoryService } from "./category.service";
 
 @ApiTags("Menu")
@@ -72,13 +68,7 @@ export class MenuController {
     @Client() client: Owner,
     @Param("storeId") storeId: string
   ): Promise<PublicCategoryWithMenus[]> {
-    return await this.categoryService.getCategoryList({
-      where: {
-        store: { publicId: storeId, owner: { id: client.id } },
-      },
-      ...CATEGORIES,
-      omit: OMIT_CATEGORY_PRIVATE,
-    });
+    return await this.categoryService.getCategoryWithMenuList(client, storeId);
   }
 
   @Get(":menuId")
@@ -88,12 +78,7 @@ export class MenuController {
     @Param("storeId") storeId: string,
     @Param("menuId") menuId: string
   ): Promise<PublicMenuDto> {
-    const findMenu = await this.menuService.getMenuUnique({
-      where: {
-        publicId: menuId,
-        category: { store: { publicId: storeId } },
-      },
-    });
+    const findMenu = await this.menuService.getMenuUnique(storeId, menuId);
 
     return PublicMenuDto.schema.parse(findMenu);
   }
