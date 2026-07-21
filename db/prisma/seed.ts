@@ -14,6 +14,12 @@ const prisma = new PrismaClient();
 // 관리자/점주 공통 비밀번호
 const COMMON_PASSWORD = "qwer1234!";
 
+// 주문 스냅샷 URL 조립용. API의 CDN_BASE_URL과 같은 값을 쓰되,
+// 시드가 env 없이도 돌아가도록 폴백을 둔다(값이 틀려도 이미지만 안 보인다).
+const SEED_CDN_BASE_URL = (
+  process.env.CDN_BASE_URL ?? "https://cdn.example.invalid"
+).replace(/\/$/, "");
+
 async function encryptPassword(value: string): Promise<string> {
   return await bcrypt.hash(value, 10);
 }
@@ -216,7 +222,10 @@ async function main() {
       return {
         publicId: item.publicId,
         orderId: order.id,
-        menuImageUrl: menu.imageUrl,
+        // 주문 시점 스냅샷이라 key가 아니라 절대 URL을 박는다.
+        menuImageUrl: menu.imageKey
+          ? `${SEED_CDN_BASE_URL}/${menu.imageKey}/thumbnail.webp`
+          : null,
         menuId: menu.id,
         menuName: item.menuName,
         basePrice: item.basePrice,

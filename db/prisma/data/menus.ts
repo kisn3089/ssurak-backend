@@ -3,6 +3,11 @@ import type {
   MenuRequiredOption,
 } from "../../types/menuOptions.type";
 
+type Images = {
+  hero: string;
+  thumbnail: string;
+};
+
 export type MenuSeed = {
   publicId: string;
   name: string;
@@ -11,13 +16,19 @@ export type MenuSeed = {
   category: string;
   isAvailable: boolean;
   sortOrder: number;
-  imageUrl: string;
+  images: Images;
   requiredOptions?: MenuRequiredOption;
   customOptions?: MenuCustomOption;
 };
 
 // 두 매장에 공통으로 생성되는 메뉴 정의.
 // publicId는 매장별로 seed.ts에서 index suffix를 붙여 유일성을 확보한다.
+//
+// imageKey는 dev 버킷에 수동으로 올려둔 샘플 이미지를 가리킨다.
+// 개발 환경에서 이미지를 보려면 S3_BUCKET에 아래 객체가 있어야 한다:
+//   menu/seed-coffee/hero.webp,   menu/seed-coffee/thumbnail.webp
+//   menu/seed-dessert/hero.webp,  menu/seed-dessert/thumbnail.webp
+// 없어도 시드와 API는 정상 동작하고 이미지만 깨져 보인다.
 export const menuSeeds: MenuSeed[] = [
   {
     publicId: "rbay46e0wjrj7n1h1q2ain8",
@@ -27,8 +38,11 @@ export const menuSeeds: MenuSeed[] = [
     category: "커피",
     isAvailable: true,
     sortOrder: 10,
-    imageUrl:
-      "https://images.unsplash.com/photo-1531835207745-506a1bc035d8?q=80&w=1287&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+    images: {
+      hero: "https://d375hwyebi9mpo.cloudfront.net/menu/vces0z57pr4vwbhbmlnbzb5a/hero.webp",
+      thumbnail:
+        "https://d375hwyebi9mpo.cloudfront.net/menu/vces0z57pr4vwbhbmlnbzb5a/thumbnail.webp",
+    },
     requiredOptions: {
       원두: {
         options: [
@@ -66,6 +80,30 @@ export const menuSeeds: MenuSeed[] = [
     },
   },
   {
+    publicId: "tq2qu2n7aayzxzf837cto4a",
+    name: "드립 커피",
+    price: 4600,
+    description: "최고급 원두로 내린 드립 커피",
+    category: "커피",
+    isAvailable: true,
+    sortOrder: 20,
+    images: {
+      hero: "https://d375hwyebi9mpo.cloudfront.net/menu/kq9va1czvbo9b15brjfp6g5o/hero.webp",
+      thumbnail:
+        "https://d375hwyebi9mpo.cloudfront.net/menu/kq9va1czvbo9b15brjfp6g5o/thumbnail.webp",
+    },
+    customOptions: {
+      얼음: {
+        options: [
+          { key: "보통", price: 0 },
+          { key: "많이", price: 0 },
+          { key: "적게", price: 0 },
+        ],
+        defaultKey: "보통",
+      },
+    },
+  },
+  {
     publicId: "ohovsqjy5mavzgk1xu187xw",
     name: "카페라떼",
     price: 5000,
@@ -73,8 +111,11 @@ export const menuSeeds: MenuSeed[] = [
     category: "커피",
     isAvailable: true,
     sortOrder: 30,
-    imageUrl:
-      "https://images.unsplash.com/photo-1729364983489-d4d569978fd7?q=80&w=1296&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+    images: {
+      hero: "https://d375hwyebi9mpo.cloudfront.net/menu/rm5p9nz4bzv2vvaeep5in0nb/hero.webp",
+      thumbnail:
+        "https://d375hwyebi9mpo.cloudfront.net/menu/rm5p9nz4bzv2vvaeep5in0nb/thumbnail.webp",
+    },
   },
   {
     publicId: "hjpomrh123401gpnvrdl0zi",
@@ -84,8 +125,11 @@ export const menuSeeds: MenuSeed[] = [
     category: "커피",
     isAvailable: true,
     sortOrder: 40,
-    imageUrl:
-      "https://images.unsplash.com/photo-1534778101976-62847782c213?q=80&w=1287&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+    images: {
+      hero: "https://d375hwyebi9mpo.cloudfront.net/menu/hv86swmvngbzuxzfx6e96rdc/hero.webp",
+      thumbnail:
+        "https://d375hwyebi9mpo.cloudfront.net/menu/hv86swmvngbzuxzfx6e96rdc/thumbnail.webp",
+    },
   },
   {
     publicId: "clspywcpjuanpifv64l8qfgq",
@@ -95,8 +139,11 @@ export const menuSeeds: MenuSeed[] = [
     category: "커피",
     isAvailable: true,
     sortOrder: 50,
-    imageUrl:
-      "https://images.unsplash.com/photo-1674038135897-3c22cc49a15e?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+    images: {
+      hero: "https://d375hwyebi9mpo.cloudfront.net/menu/ca58mxnw9i8ngajlc0ra9w45/hero.webp",
+      thumbnail:
+        "https://d375hwyebi9mpo.cloudfront.net/menu/ca58mxnw9i8ngajlc0ra9w45/thumbnail.webp",
+    },
     customOptions: {
       휘핑: {
         options: [
@@ -117,8 +164,11 @@ export const menuSeeds: MenuSeed[] = [
     category: "디저트",
     isAvailable: true,
     sortOrder: 10,
-    imageUrl:
-      "https://images.unsplash.com/photo-1681218079567-35aef7c8e7e4?q=80&w=2148&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+    images: {
+      hero: "https://d375hwyebi9mpo.cloudfront.net/menu/vrszq7an1hw5ywd6k3owym20/hero.webp",
+      thumbnail:
+        "https://d375hwyebi9mpo.cloudfront.net/menu/vrszq7an1hw5ywd6k3owym20/thumbnail.webp",
+    },
   },
   {
     publicId: "d5ghdt3wai43i3jhf3dyk7p",
@@ -128,8 +178,11 @@ export const menuSeeds: MenuSeed[] = [
     category: "디저트",
     isAvailable: true,
     sortOrder: 20,
-    imageUrl:
-      "https://images.unsplash.com/photo-1533134242443-d4fd215305ad?q=80&w=2340&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+    images: {
+      hero: "https://d375hwyebi9mpo.cloudfront.net/menu/gcwdfp67xjfe2g1uc3infy1g/hero.webp",
+      thumbnail:
+        "https://d375hwyebi9mpo.cloudfront.net/menu/gcwdfp67xjfe2g1uc3infy1g/thumbnail.webp",
+    },
   },
   {
     publicId: "bun98dtbprj7lyessgn1i8f5",
@@ -139,8 +192,11 @@ export const menuSeeds: MenuSeed[] = [
     category: "디저트",
     isAvailable: true,
     sortOrder: 30,
-    imageUrl:
-      "https://images.unsplash.com/photo-1558584724-0e4d32ca55a4?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+    images: {
+      hero: "https://d375hwyebi9mpo.cloudfront.net/menu/pw6qgzm21a3gekw0fax93545/hero.webp",
+      thumbnail:
+        "https://d375hwyebi9mpo.cloudfront.net/menu/pw6qgzm21a3gekw0fax93545/thumbnail.webp",
+    },
     customOptions: {
       "메뉴 추가": {
         options: [
@@ -161,8 +217,11 @@ export const menuSeeds: MenuSeed[] = [
     category: "디저트",
     isAvailable: true,
     sortOrder: 40,
-    imageUrl:
-      "https://images.unsplash.com/photo-1737700087938-ebdf93f15b50?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+    images: {
+      hero: "https://d375hwyebi9mpo.cloudfront.net/menu/tm3vbrig4t3xurhtwxf1qps6/hero.webp",
+      thumbnail:
+        "https://d375hwyebi9mpo.cloudfront.net/menu/tm3vbrig4t3xurhtwxf1qps6/thumbnail.webp",
+    },
   },
   {
     publicId: "b10c9h3cg23ghiio7njqolxs",
@@ -172,8 +231,11 @@ export const menuSeeds: MenuSeed[] = [
     category: "디저트",
     isAvailable: true,
     sortOrder: 50,
-    imageUrl:
-      "https://images.unsplash.com/photo-1627435605887-326ef07f81f2?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+    images: {
+      hero: "https://d375hwyebi9mpo.cloudfront.net/menu/d2zf0d8n1czqgd4ux7p6j5gt/hero.webp",
+      thumbnail:
+        "https://d375hwyebi9mpo.cloudfront.net/menu/d2zf0d8n1czqgd4ux7p6j5gt/thumbnail.webp",
+    },
   },
   {
     publicId: "fgigzvvca0l01qkbqklo01jd",
@@ -183,8 +245,11 @@ export const menuSeeds: MenuSeed[] = [
     category: "디저트",
     isAvailable: true,
     sortOrder: 60,
-    imageUrl:
-      "https://images.unsplash.com/photo-1733210437318-b76aca1f18ba?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+    images: {
+      hero: "https://d375hwyebi9mpo.cloudfront.net/menu/wyo6uq0a903fft9q5boh3dek/hero.webp",
+      thumbnail:
+        "https://d375hwyebi9mpo.cloudfront.net/menu/wyo6uq0a903fft9q5boh3dek/thumbnail.webp",
+    },
   },
   {
     publicId: "lxuurz3i3pficmjadk3vifhx",
@@ -194,8 +259,11 @@ export const menuSeeds: MenuSeed[] = [
     category: "디저트",
     isAvailable: true,
     sortOrder: 70,
-    imageUrl:
-      "https://images.unsplash.com/photo-1686172368295-6d72432ca765?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+    images: {
+      hero: "https://d375hwyebi9mpo.cloudfront.net/menu/azmi1u7ymc8e5ud4own0gfpl/hero.webp",
+      thumbnail:
+        "https://d375hwyebi9mpo.cloudfront.net/menu/azmi1u7ymc8e5ud4own0gfpl/thumbnail.webp",
+    },
   },
   {
     publicId: "n9553xbiawzgrd86xrkq2gvc",
@@ -205,8 +273,11 @@ export const menuSeeds: MenuSeed[] = [
     category: "디저트",
     isAvailable: true,
     sortOrder: 80,
-    imageUrl:
-      "https://images.unsplash.com/photo-1586657395688-476c3f92b5f6?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+    images: {
+      hero: "https://d375hwyebi9mpo.cloudfront.net/menu/bggck4lijcxbxyesvvu6so93/hero.webp",
+      thumbnail:
+        "https://d375hwyebi9mpo.cloudfront.net/menu/bggck4lijcxbxyesvvu6so93/thumbnail.webp",
+    },
   },
   {
     publicId: "my3yamq9rk252r3g0rj48a6g",
@@ -216,28 +287,10 @@ export const menuSeeds: MenuSeed[] = [
     category: "디저트",
     isAvailable: true,
     sortOrder: 90,
-    imageUrl:
-      "https://images.unsplash.com/photo-1639744211487-b27e3551b07c?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-  },
-  {
-    publicId: "tq2qu2n7aayzxzf837cto4a",
-    name: "드립 커피",
-    price: 4600,
-    description: "최고급 원두로 내린 드립 커피",
-    category: "커피",
-    isAvailable: true,
-    sortOrder: 20,
-    imageUrl:
-      "https://images.unsplash.com/photo-1587955245893-389f2215c6eb?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-    customOptions: {
-      얼음: {
-        options: [
-          { key: "보통", price: 0 },
-          { key: "많이", price: 0 },
-          { key: "적게", price: 0 },
-        ],
-        defaultKey: "보통",
-      },
+    images: {
+      hero: "https://d375hwyebi9mpo.cloudfront.net/menu/pybyfmpqk1jkdiidd5kkwc53/hero.webp",
+      thumbnail:
+        "https://d375hwyebi9mpo.cloudfront.net/menu/pybyfmpqk1jkdiidd5kkwc53/thumbnail.webp",
     },
   },
 ];

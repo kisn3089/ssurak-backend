@@ -1,18 +1,27 @@
 import z from "zod";
-import type { Menu } from "../../types/menu/menu.interface";
+import type { MenuImages, Menu } from "../../types/menu/menu.interface";
 import { isoDateTime } from "./common.response";
 import {
   menuCustomOptionSchema,
   menuRequiredOptionSchema,
 } from "./menuOption.response";
 
-/** 메뉴 응답. `id`·`categoryId`는 스키마에 없으므로 parse 시 제거된다. */
+export const menuImagesSchema = z.object({
+  hero: z.string().describe("메뉴 상세 히어로 (780x585)"),
+  thumbnail: z.string().describe("메뉴 리스트 썸네일 (240x240)"),
+}) satisfies z.ZodType<MenuImages>;
+
+/** 메뉴 응답. `id`·`categoryId`·`imageKey`는 스키마에 없으므로 parse 시 제거된다. */
 export const publicMenuSchema = z.object({
   publicId: z.string().describe("메뉴 고유 ID"),
   name: z.string().describe("메뉴 이름"),
   price: z.number().describe("가격"),
   description: z.string().nullable().describe("메뉴 설명"),
-  imageUrl: z.string().nullable().describe("이미지 URL"),
+  // imageKey(S3 object key)는 응답에 나가지 않는다. 서버가 CDN_BASE_URL과 합쳐
+  // 완성된 URL만 내려주므로 버킷 구조를 바꿔도 프론트 배포가 필요 없다.
+  images: menuImagesSchema
+    .nullable()
+    .describe("슬롯별 이미지 URL. 이미지 미등록 시 null"),
   isAvailable: z.boolean().describe("판매 가능 여부"),
   sortOrder: z.number().describe("카테고리 내 정렬 순서"),
   requiredOptions: menuRequiredOptionSchema.nullable().describe("필수 옵션"),
