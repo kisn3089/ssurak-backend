@@ -14,6 +14,8 @@ import {
   vi,
 } from "vitest";
 import { mockDeep } from "vitest-mock-extended";
+import { ConfigService } from "@nestjs/config";
+import { MenuImageService } from "src/common/image/menu-image.service";
 import { CartService } from "src/carts/carts.service";
 import { PrismaService } from "src/prisma/prisma.service";
 import { expectHttpExceptionAsync } from "test/helpers/expect-http-exception";
@@ -37,7 +39,12 @@ const redlock = new Redlock([redis], { retryCount: 3, retryDelay: 200 });
 
 const prismaMock = mockDeep<PrismaService>();
 
-const service = new CartService(redis, redlock, prismaMock);
+// CDN 베이스만 있으면 되므로 ConfigService는 최소 스텁으로 대체한다.
+const menuImageService = new MenuImageService({
+  getOrThrow: () => "https://cdn.example.com",
+} as unknown as ConfigService);
+
+const service = new CartService(redis, redlock, prismaMock, menuImageService);
 
 const menuFixture = (overrides: Partial<Menu> = {}): Menu => ({
   id: 1n,
@@ -46,7 +53,7 @@ const menuFixture = (overrides: Partial<Menu> = {}): Menu => ({
   name: "아메리카노",
   price: 3000,
   description: null,
-  imageUrl: null,
+  imageKey: null,
   isAvailable: true,
   sortOrder: 10,
   createdAt: new Date(),

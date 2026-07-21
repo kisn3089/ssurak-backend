@@ -37,6 +37,7 @@ import {
   validateOrderStatusTransition,
 } from "src/common/validate/order/status-transition";
 import { MENU_VALIDATION_FIELDS_SELECT } from "src/common/query/menu-query.const";
+import { MenuImageService } from "src/common/image/menu-image.service";
 import { TABLE_OMIT } from "src/common/query/table-query.const";
 import {
   CancelParams,
@@ -53,6 +54,7 @@ export class OrdersService {
     private readonly prismaService: PrismaService,
     private readonly sessionClient: SessionClient,
     private readonly cartService: CartService,
+    private readonly menuImageService: MenuImageService,
     @Inject(REDLOCK_CLIENT) private readonly redlock: Redlock
   ) {}
 
@@ -148,7 +150,8 @@ export class OrdersService {
           const orderItemsData = createOrderItemsWithValidMenu(
             payload.orderItems,
             menus,
-            menuPublicIds
+            menuPublicIds,
+            this.menuImageService.baseUrl
           );
 
           if (session.status !== TableSessionStatus.ACTIVE) {

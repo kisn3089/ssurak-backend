@@ -11,7 +11,7 @@ const menuFixture = (publicId: string): MenuValidationFields => ({
   publicId,
   name: `메뉴-${publicId}`,
   price: 1000,
-  imageUrl: null,
+  imageKey: null,
   requiredOptions: null,
   customOptions: null,
   isAvailable: true,
