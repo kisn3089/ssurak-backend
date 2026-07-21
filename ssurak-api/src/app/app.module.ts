@@ -13,6 +13,9 @@ import { IdentityModule } from "src/identity/identity.module";
 import { InternalModule } from "src/internal/internal.module";
 import { RedisModule } from "src/redis/redis.module";
 import { RealtimeModule } from "src/realtime/realtime.module";
+import { StorageModule } from "src/storage/storage.module";
+import { S3Module } from "src/storage/s3.module";
+import { MenuImageModule } from "src/common/image/menu-image.module";
 
 @Module({
   imports: [
@@ -22,6 +25,8 @@ import { RealtimeModule } from "src/realtime/realtime.module";
     }),
     PrismaModule,
     RedisModule,
+    S3Module,
+    MenuImageModule,
     InternalModule,
     AuthModule,
     IdentityModule,
@@ -29,6 +34,7 @@ import { RealtimeModule } from "src/realtime/realtime.module";
     OrderModule,
     CartModule,
     RealtimeModule,
+    StorageModule,
 
     RouterModule.register([
       { path: "auth/v1", module: AuthModule },
@@ -36,6 +42,7 @@ import { RealtimeModule } from "src/realtime/realtime.module";
       { path: "stores/v1", module: StoreModule },
       { path: "orders/v1", module: OrderModule },
       { path: "carts/v1", module: CartModule },
+      { path: "upload/v1", module: StorageModule },
     ]),
   ],
   controllers: [AppController],
