@@ -21,9 +21,16 @@
 #   CLOUDFLARE_TUNNEL_TOKEN=eyJ...                  # 터널 토큰(긴 eyJ... 문자열, ID 아님)
 #   AWS_REGION, S3_BUCKET, CDN_BASE_URL            # 메뉴 이미지 스토리지(운영 버킷)
 #
-# AWS 자격증명은 .env 에 넣지 않는다. 홈서버의 ~/.aws 를 ssurak 서비스에
-# 읽기 전용 마운트하고 AWS_PROFILE 로 프로필만 지정한다(아래 ssurak 서비스 참고).
-# 홈서버에서 1회 준비:  aws configure --profile ssurak-prod
+# AWS 자격증명은 .env에 넣지 않는다. ssurak-prod 프로필만 담은 전용 디렉토리
+# (~/.aws-ssurak-prod)를 ssurak 서비스에 읽기 전용 마운트하고 AWS_PROFILE로
+# 프로필을 지정한다(아래 ssurak 서비스 참고). 전체 ~/.aws 를 마운트하지 않는 건
+# 침해 시 다른 프로필 자격증명까지 새어나가는 걸 막기 위해서다.
+# 홈서버에서 1회 준비:
+#   mkdir -p ~/.aws-ssurak-prod
+#   # ~/.aws-ssurak-prod/credentials → [ssurak-prod] 자격증명만
+#   # ~/.aws-ssurak-prod/config      → [profile ssurak-prod] region 등
+# 또한 ssurak-prod IAM principal 은 운영 버킷의 필요한 S3 prefix(menu/*, tmp/*)와
+# 최소 액션(PutObject/GetObject/CopyObject)으로만 권한을 좁힌다 — AWS 콘솔/IaC 쪽 작업.
 # ============================================================================
 # 프로젝트명 고정 — 기본값(디렉토리명 "backend")은 같은 이름의 다른 레포와
 # 볼륨/네트워크를 공유하게 되므로 반드시 명시한다.
@@ -117,19 +124,20 @@ services:
       DATABASE_URL: mysql://${DB_USER}:${DB_PASSWORD}@mysql:3306/${DB_NAME}
       REDIS_HOST: redis
       # 아래 볼륨으로 마운트한 자격증명 중 어떤 프로필을 쓸지 지정한다.
-      # .env 가 아니라 여기 둔다 — compose 의 environment 는 프로세스 시작 전에
-      # 실제 환경변수로 박히지만, .env 는 ConfigModule 이 읽는 시점에 의존해서
+      # .env가 아니라 여기 둔다 — compose의 environment는 프로세스 시작 전에
+      # 실제 환경변수로 박히지만, .env는 ConfigModule이 읽는 시점에 의존해서
       # AWS SDK 기본 체인이 못 볼 수 있다.
       AWS_PROFILE: ssurak-prod
     expose:
       - "8080"
     volumes:
       # 홈서버(Mac mini) 운영이라 ECS Task Role 같은 자동 자격증명이 없다.
-      # 호스트의 자격증명 파일을 읽기 전용으로 빌려준다 — 이미지에 키를 굽지
-      # 않으려는 것이므로 :ro 를 떼지 말 것.
+      # ssurak-prod 프로필 하나만 담은 전용 디렉토리를 읽기 전용으로 빌려준다 —
+      # 전체 ~/.aws 를 주면 침해 시 다른 프로필 자격증명까지 노출되므로 격리한다.
+      # 이미지에 키를 굽지 않으려는 것이므로 :ro 를 떼지 말 것.
       # production 타깃은 USER node 로 돌기 때문에 /root/.aws 가 아니라
       # /home/node/.aws 여야 한다(dev compose 와 경로가 다른 이유).
-      - ~/.aws:/home/node/.aws:ro
+      - ~/.aws-ssurak-prod:/home/node/.aws:ro
     depends_on:
       mysql:
         condition: service_healthy
