@@ -46,7 +46,7 @@ const TRANSLATIONS: ReadonlyArray<{
 ];
 
 /**
- * MediaController에만 건다(@UseFilters). 전역이 아니므로 다른 라우트의 400은 영향받지 않는다.
+ * StorageController에만 건다(@UseFilters). 전역이 아니므로 다른 라우트의 400은 영향받지 않는다.
  * 매칭되지 않는 예외(Zod 검증 실패, 컨트롤러가 직접 던진 400 등)는 원본 응답을 그대로 내보낸다.
  */
 @Catch(PayloadTooLargeException, BadRequestException)
