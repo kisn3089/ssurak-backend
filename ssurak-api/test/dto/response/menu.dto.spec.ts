@@ -5,9 +5,9 @@ import { MenuImageService } from "src/common/image/menu-image.service";
 
 const CDN = "https://cdn.example.com";
 
-const menuImageService = new MenuImageService({
-  getOrThrow: () => CDN,
-} as unknown as ConfigService);
+const menuImageService = new MenuImageService(
+  new ConfigService({ CDN_BASE_URL: CDN })
+);
 
 /** Prisma가 돌려주는 원본 row. imageKey를 그대로 들고 있다. */
 const menuRowFixture = (imageKey: string | null = null) => ({

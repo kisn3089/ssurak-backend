@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { mockDeep } from "vitest-mock-extended";
 import { NotFoundException } from "@nestjs/common";
+import { Category, Menu } from "@ssurak/db";
 import { MenuService } from "src/stores/menu/menu.service";
 import { PrismaService } from "src/prisma/prisma.service";
 import { StorageService } from "src/storage/storage.service";
@@ -10,6 +11,34 @@ const STORE_ID = "store-public-id";
 const OWNER = "owner-public-id";
 const TMP_KEY = "tmp/owner-public-id/abc123";
 
+// Prisma mock 반환값 — 테스트는 호출 인자만 검증하므로 shape만 채운다.
+const categoryRow: Category = {
+  id: 1n,
+  publicId: "category-public-id",
+  storeId: 1n,
+  name: "커피",
+  sortOrder: 0,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
+const menuRow: Menu = {
+  id: 1n,
+  publicId: "menu-public-id",
+  categoryId: 1n,
+  name: "아메리카노",
+  price: 4500,
+  description: null,
+  imageKey: null,
+  isAvailable: true,
+  sortOrder: 0,
+  requiredOptions: null,
+  customOptions: null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  deletedAt: null,
+};
+
 const prisma = mockDeep<PrismaService>();
 const storage = mockDeep<StorageService>();
 
@@ -17,19 +46,18 @@ const service = new MenuService(prisma, storage);
 
 const createPayload = (
   overrides: Partial<CreateMenuPayloadDto> = {}
-): CreateMenuPayloadDto =>
-  ({
-    name: "아메리카노",
-    price: 4500,
-    categoryId: "category-public-id",
-    isAvailable: true,
-    ...overrides,
-  }) as CreateMenuPayloadDto;
+): CreateMenuPayloadDto => ({
+  name: "아메리카노",
+  price: 4500,
+  categoryId: "category-public-id",
+  isAvailable: true,
+  ...overrides,
+});
 
 beforeEach(() => {
-  prisma.category.findFirstOrThrow.mockResolvedValue({ id: 1n } as never);
-  prisma.menu.create.mockResolvedValue({} as never);
-  prisma.menu.update.mockResolvedValue({} as never);
+  prisma.category.findFirstOrThrow.mockResolvedValue(categoryRow);
+  prisma.menu.create.mockResolvedValue(menuRow);
+  prisma.menu.update.mockResolvedValue(menuRow);
   storage.promoteMenuImage.mockReset();
   prisma.menu.create.mockClear();
   prisma.menu.update.mockClear();

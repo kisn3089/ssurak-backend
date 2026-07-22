@@ -39,10 +39,10 @@ const redlock = new Redlock([redis], { retryCount: 3, retryDelay: 200 });
 
 const prismaMock = mockDeep<PrismaService>();
 
-// CDN 베이스만 있으면 되므로 ConfigService는 최소 스텁으로 대체한다.
-const menuImageService = new MenuImageService({
-  getOrThrow: () => "https://cdn.example.com",
-} as unknown as ConfigService);
+// CDN 베이스만 있으면 되므로 ConfigService는 getOrThrow만 스텁한다.
+const configService = mockDeep<ConfigService>();
+configService.getOrThrow.mockReturnValue("https://cdn.example.com");
+const menuImageService = new MenuImageService(configService);
 
 const service = new CartService(redis, redlock, prismaMock, menuImageService);
 
