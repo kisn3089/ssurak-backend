@@ -23,8 +23,15 @@ export type MenuVariant = keyof typeof MENU_VARIANTS;
 export const MENU_VARIANT_NAMES = Object.keys(MENU_VARIANTS) as MenuVariant[];
 
 /**
- * 업로드를 거절할 최소 원본 가로 폭.
- * hero(780)보다 작은 원본은 확대하지 않으므로(withoutEnlargement) 규격 미달로 저장되고,
- * URL은 정상인데 실제 이미지만 흐린 상태가 된다. 그 전에 막는다.
+ * 업로드를 거절할 최소 원본 크기.
+ * 가장 큰 variant(hero)보다 작은 원본은 확대되지 않으므로(withoutEnlargement)
+ * 규격 미달로 저장된다 — URL은 정상인데 실제 이미지만 흐린 상태가 된다. 그 전에 막는다.
+ * cover fit이라 폭·높이 요구가 다르니 축마다 따로 본다
+ * (min(w,h) 같은 단일 스칼라로는 780×585 같은 정상 원본을 오탐한다).
  */
-export const MIN_SOURCE_WIDTH = 400;
+export const MIN_SOURCE_WIDTH = Math.max(
+  ...Object.values(MENU_VARIANTS).map((variant) => variant.width)
+);
+export const MIN_SOURCE_HEIGHT = Math.max(
+  ...Object.values(MENU_VARIANTS).map((variant) => variant.height)
+);

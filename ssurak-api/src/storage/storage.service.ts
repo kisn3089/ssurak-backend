@@ -16,6 +16,7 @@ import { S3_CLIENT } from "./s3.provider";
 import {
   MENU_VARIANTS,
   MENU_VARIANT_NAMES,
+  MIN_SOURCE_HEIGHT,
   MIN_SOURCE_WIDTH,
   MenuVariant,
 } from "./image-variants";
@@ -67,48 +68,52 @@ export class StorageService {
 
     const prefix = tmpPrefixOf(ownerPublicId, createId());
 
-    const entries = await Promise.all(
-      MENU_VARIANT_NAMES.map(async (variant) => {
-        const spec = MENU_VARIANTS[variant];
+    const uploadVariant = async (
+      variant: MenuVariant
+    ): Promise<VariantInfo> => {
+      const spec = MENU_VARIANTS[variant];
 
-        const optimized = await sharp(buffer, {
-          limitInputPixels: MAX_INPUT_PIXELS,
-        })
-          .rotate()
-          .resize({
-            width: spec.width,
-            height: spec.height,
-            fit: "cover",
-            withoutEnlargement: true,
-          })
-          .webp({ quality: spec.quality, effort: 5 })
-          .toBuffer({ resolveWithObject: true });
-
-        await this.s3.send(
-          new PutObjectCommand({
-            Bucket: this.bucket,
-            Key: objectKeyOf(prefix, variant),
-            Body: optimized.data,
-            ContentType: "image/webp",
-            // 키에 cuid2가 들어가 같은 키에 다른 내용이 절대 들어가지 않으므로
-            // 영구 캐시가 안전하다. 이미지 교체는 항상 새 키를 만든다.
-            CacheControl: "public, max-age=31536000, immutable",
-          })
-        );
-
-        const info: VariantInfo = {
-          width: optimized.info.width,
-          height: optimized.info.height,
-          bytes: optimized.info.size,
-        };
-        return [variant, info] as const;
+      const optimized = await sharp(buffer, {
+        limitInputPixels: MAX_INPUT_PIXELS,
       })
-    );
+        .rotate()
+        .resize({
+          width: spec.width,
+          height: spec.height,
+          fit: "cover",
+          withoutEnlargement: true,
+        })
+        .webp({ quality: spec.quality, effort: 5 })
+        .toBuffer({ resolveWithObject: true });
 
-    return {
-      imageKey: prefix,
-      variants: Object.fromEntries(entries) as Record<MenuVariant, VariantInfo>,
+      await this.s3.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: objectKeyOf(prefix, variant),
+          Body: optimized.data,
+          ContentType: "image/webp",
+          // 키에 cuid2가 들어가 같은 키에 다른 내용이 절대 들어가지 않으므로
+          // 영구 캐시가 안전하다. 이미지 교체는 항상 새 키를 만든다.
+          CacheControl: "public, max-age=31536000, immutable",
+        })
+      );
+
+      return {
+        width: optimized.info.width,
+        height: optimized.info.height,
+        bytes: optimized.info.size,
+      };
     };
+
+    // variant를 병렬 업로드한 뒤 이름으로 record를 조립한다.
+    // 명시적 리터럴이라 variant가 늘면 이 자리에서 컴파일이 깨진다(캐스팅 없이 완전성 보장).
+    const [hero, thumbnail] = await Promise.all([
+      uploadVariant("hero"),
+      uploadVariant("thumbnail"),
+    ]);
+    const variants: Record<MenuVariant, VariantInfo> = { hero, thumbnail };
+
+    return { imageKey: prefix, variants };
   }
 
   /**
@@ -164,9 +169,9 @@ export class StorageService {
     if (!width || !height) {
       throw new BadRequestException("이미지 정보를 읽을 수 없습니다.");
     }
-    if (Math.min(width, height) < MIN_SOURCE_WIDTH) {
+    if (width < MIN_SOURCE_WIDTH || height < MIN_SOURCE_HEIGHT) {
       throw new BadRequestException(
-        `이미지는 가로·세로 모두 ${MIN_SOURCE_WIDTH}px 이상이어야 합니다.`
+        `이미지는 최소 ${MIN_SOURCE_WIDTH}×${MIN_SOURCE_HEIGHT}px 이상이어야 합니다.`
       );
     }
   }

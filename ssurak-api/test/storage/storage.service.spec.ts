@@ -12,9 +12,8 @@ const BUCKET = "ssurak-media-test";
 const OWNER = "owner1publicid0000000000";
 
 const s3 = mockDeep<S3Client>();
-const configService = {
-  getOrThrow: () => BUCKET,
-} as unknown as ConfigService;
+const configService = mockDeep<ConfigService>();
+configService.getOrThrow.mockReturnValue(BUCKET);
 
 const service = new StorageService(s3, configService);
 
@@ -41,6 +40,20 @@ async function halfRedHalfBlue(
     .toBuffer();
 }
 
+/** 폭·높이를 따로 지정하는 단색 원본. 축별 최소 크기 검증을 확인한다. */
+async function solidRect(width: number, height: number): Promise<Buffer> {
+  return await sharp({
+    create: {
+      width,
+      height,
+      channels: 3,
+      background: { r: 120, g: 120, b: 120 },
+    },
+  })
+    .jpeg()
+    .toBuffer();
+}
+
 type PutInput = {
   Bucket?: string;
   Key?: string;
@@ -55,9 +68,12 @@ type PutInput = {
  */
 function putInputs(): PutInput[] {
   return s3.send.mock.calls
-    .map(([command]) => command)
-    .filter((command) => command instanceof PutObjectCommand)
-    .map((command) => (command as PutObjectCommand).input as PutInput);
+    .map(([command]): unknown => command)
+    .filter(
+      (command): command is PutObjectCommand =>
+        command instanceof PutObjectCommand
+    )
+    .map((command) => command.input);
 }
 
 /** 특정 좌표의 RGB를 읽는다. */
@@ -131,6 +147,23 @@ describe("StorageService.saveImage", () => {
     await expect(service.saveImage(tooSmall, OWNER)).rejects.toThrowError(
       BadRequestException
     );
+
+    expect(s3.send).not.toHaveBeenCalled();
+  });
+
+  it("폭·높이가 모두 규격을 채우면 가로로 긴 원본도 통과한다", async () => {
+    // min(w,h) 같은 단일 스칼라 검증이면 min(800,600)=600이 hero 폭(780) 미만이라
+    // 오탐하던 정상 원본. 축마다 따로 봐야 통과한다.
+    await expect(
+      service.saveImage(await solidRect(800, 600), OWNER)
+    ).resolves.toBeDefined();
+  });
+
+  it("한 축이라도 규격 미달이면 거절한다", async () => {
+    // 폭(800)은 충분하지만 높이(500)가 hero(585) 미만 — 그대로 두면 hero가 규격 미달로 저장된다.
+    await expect(
+      service.saveImage(await solidRect(800, 500), OWNER)
+    ).rejects.toThrowError(BadRequestException);
 
     expect(s3.send).not.toHaveBeenCalled();
   });
