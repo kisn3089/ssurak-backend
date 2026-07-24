@@ -4,4 +4,4 @@ export const FILE_FIELD_NAME = "file";
 export const MAX_FILE_SIZE_MB = 5;
 export const MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024;
 
-export const IMAGE_MIME = /^image\/(png|jpe?g|webp|gif|avif|tiff)$/;
+export const IMAGE_MIME = /^image\/(png|jpe?g|webp|gif|avif|tiff|heic|heif)$/;

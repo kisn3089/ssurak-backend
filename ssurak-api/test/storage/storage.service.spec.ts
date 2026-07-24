@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { mockDeep } from "vitest-mock-extended";
 import sharp from "sharp";
@@ -39,6 +41,13 @@ async function halfRedHalfBlue(
     .jpeg()
     .toBuffer();
 }
+
+/**
+ * 아이폰이 쓰는 실제 HEIC(HEVC) 원본 900×700. sharp는 heif 출력(HEVC 인코더)을
+ * 못 하므로 런타임 생성이 불가 — 커밋된 픽스처를 읽는다.
+ */
+const heicSample = (): Buffer =>
+  readFileSync(resolve("test/storage/fixtures/iphone-sample.heic"));
 
 /** 폭·높이를 따로 지정하는 단색 원본. 축별 최소 크기 검증을 확인한다. */
 async function solidRect(width: number, height: number): Promise<Buffer> {
@@ -164,6 +173,33 @@ describe("StorageService.saveImage", () => {
     await expect(
       service.saveImage(await solidRect(800, 500), OWNER)
     ).rejects.toThrowError(BadRequestException);
+
+    expect(s3.send).not.toHaveBeenCalled();
+  });
+
+  it("아이폰 HEIC 원본은 JPEG로 변환해 webp variant로 저장한다", async () => {
+    // sharp는 HEIC를 직접 못 읽으므로 heic-convert가 먼저 돌아야 파이프라인이 성공한다.
+    const saved = await service.saveImage(heicSample(), OWNER);
+
+    expect(putInputs()).toHaveLength(MENU_VARIANT_NAMES.length);
+    for (const input of putInputs()) {
+      expect(input.ContentType).toBe("image/webp");
+    }
+    expect(saved.imageKey).toMatch(new RegExp(`^tmp/${OWNER}/[a-z0-9]+$`));
+  });
+
+  it("HEIC로 보였지만 변환할 수 없는 파일은 400으로 거절한다", async () => {
+    // 유효한 ftyp/heic 헤더만 있고 실데이터가 없어 heic-convert가 실패하는 케이스.
+    // 안 잡으면 평범한 Error → 500이 되므로 400으로 나가야 한다.
+    const fakeHeic = Buffer.concat([
+      Buffer.from([0, 0, 0, 0x18]),
+      Buffer.from("ftypheic", "ascii"),
+      Buffer.alloc(16),
+    ]);
+
+    await expect(service.saveImage(fakeHeic, OWNER)).rejects.toThrowError(
+      BadRequestException
+    );
 
     expect(s3.send).not.toHaveBeenCalled();
   });

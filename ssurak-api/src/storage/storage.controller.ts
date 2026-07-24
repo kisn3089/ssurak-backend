@@ -34,7 +34,7 @@ export class StorageController {
         if (!IMAGE_MIME.test(file.mimetype)) {
           callback(
             new BadRequestException(
-              "png, jpg, jpeg, webp, gif, avif, tiff 파일만 업로드할 수 있습니다."
+              "png, jpg, jpeg, webp, gif, avif, tiff, heic 파일만 업로드할 수 있습니다."
             ),
             false
           );

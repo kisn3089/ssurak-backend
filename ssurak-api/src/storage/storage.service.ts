@@ -11,8 +11,10 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import sharp from "sharp";
+import convert from "heic-convert";
 import { createId } from "@paralleldrive/cuid2";
 import { S3_CLIENT } from "./s3.provider";
+import { isHeic } from "./heic";
 import {
   MENU_VARIANTS,
   MENU_VARIANT_NAMES,
@@ -64,7 +66,10 @@ export class StorageService {
   }
 
   async saveImage(buffer: Buffer, ownerPublicId: string): Promise<SavedImage> {
-    await this.assertUsableSource(buffer);
+    // 아이폰 HEIC(HEVC)는 sharp가 못 읽으므로 JPEG로 옮긴 뒤 파이프라인에 태운다.
+    const source = isHeic(buffer) ? await this.heicToJpeg(buffer) : buffer;
+
+    await this.assertUsableSource(source);
 
     const prefix = tmpPrefixOf(ownerPublicId, createId());
 
@@ -73,7 +78,7 @@ export class StorageService {
     ): Promise<VariantInfo> => {
       const spec = MENU_VARIANTS[variant];
 
-      const optimized = await sharp(buffer, {
+      const optimized = await sharp(source, {
         limitInputPixels: MAX_INPUT_PIXELS,
       })
         .rotate()
@@ -114,6 +119,22 @@ export class StorageService {
     const variants: Record<MenuVariant, VariantInfo> = { hero, thumbnail };
 
     return { imageKey: prefix, variants };
+  }
+
+  /**
+   * HEIC(HEVC)를 JPEG 버퍼로 변환한다.
+   * 손상·비정상 HEIC는 여기서 400으로 돌려준다(안 잡으면 평범한 Error → 500).
+   */
+  private async heicToJpeg(buffer: Buffer): Promise<Buffer> {
+    try {
+      return Buffer.from(
+        await convert({ buffer, format: "JPEG", quality: 0.92 })
+      );
+    } catch {
+      throw new BadRequestException(
+        "HEIC 이미지를 변환하지 못했습니다. 다시 시도하거나 다른 확장자로 올려주세요."
+      );
+    }
   }
 
   /**
