@@ -58,9 +58,16 @@ beforeEach(() => {
   prisma.category.findFirstOrThrow.mockResolvedValue(categoryRow);
   prisma.menu.create.mockResolvedValue(menuRow);
   prisma.menu.update.mockResolvedValue(menuRow);
+  prisma.menu.findFirstOrThrow.mockResolvedValue(menuRow);
+  // 겹치는 sortOrder 없음 = 재조정 스킵을 기본값으로 둔다.
+  prisma.menu.findFirst.mockResolvedValue(null);
+  // $transaction(callback) 형태를 콜백에 mock client(tx)를 그대로 넘겨 실행한다.
+  prisma.$transaction.mockImplementation((cb) => cb(prisma));
   storage.promoteMenuImage.mockReset();
   prisma.menu.create.mockClear();
   prisma.menu.update.mockClear();
+  prisma.menu.updateMany.mockClear();
+  prisma.menu.findFirst.mockClear();
 });
 
 describe("MenuService.createMenu", () => {
@@ -147,5 +154,90 @@ describe("MenuService.partialUpdateMenu", () => {
         data: expect.objectContaining({ imageKey: null }),
       })
     );
+  });
+
+  it("겹치는 sortOrder가 없으면 요청 값을 그대로 반영한다", async () => {
+    prisma.menu.findFirst.mockResolvedValue(null);
+
+    await service.partialUpdateMenu(STORE_ID, "menu-public-id", OWNER, {
+      categoryId: "category-public-id",
+      sortOrder: 25,
+    });
+
+    expect(prisma.menu.updateMany).not.toHaveBeenCalled();
+    const [arg] = prisma.menu.update.mock.calls.at(-1)!;
+    expect(arg.data).toMatchObject({ sortOrder: 25 });
+  });
+
+  it("sortOrder가 겹치면 겹친 메뉴를 다음 슬롯 중간값으로 밀어낸다", async () => {
+    prisma.menu.findFirst
+      .mockResolvedValueOnce({ ...menuRow, publicId: "dup-id" }) // 충돌 메뉴
+      .mockResolvedValueOnce({ ...menuRow, sortOrder: 30 }); // 바로 위 메뉴
+
+    await service.partialUpdateMenu(STORE_ID, "menu-public-id", OWNER, {
+      categoryId: "category-public-id",
+      sortOrder: 10,
+    });
+
+    // floor((10 + 30) / 2) = 20 으로 충돌 메뉴만 이동
+    expect(prisma.menu.update).toHaveBeenCalledWith({
+      where: { publicId: "dup-id" },
+      data: { sortOrder: 20 },
+    });
+    expect(prisma.menu.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("중간 정수 자리가 없으면 뒤쪽을 increment 한 문장으로 민다", async () => {
+    prisma.menu.findFirst
+      .mockResolvedValueOnce({ ...menuRow, publicId: "dup-id" }) // 충돌 메뉴
+      .mockResolvedValueOnce({ ...menuRow, sortOrder: 11 }); // 인접해 간격 없음
+
+    await service.partialUpdateMenu(STORE_ID, "menu-public-id", OWNER, {
+      categoryId: "category-public-id",
+      sortOrder: 10,
+    });
+
+    expect(prisma.menu.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ sortOrder: { gte: 10 } }),
+        data: { sortOrder: { increment: 10 } },
+      })
+    );
+    // 충돌 메뉴 개별 이동은 하지 않는다(단일 UPDATE로 대체).
+    expect(prisma.menu.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ where: { publicId: "dup-id" } })
+    );
+  });
+
+  it("increment 범위(gte)가 충돌 메뉴를 포함하므로 개별 update 없이 본체만 update한다", async () => {
+    const collidedSortOrder = 10;
+    prisma.menu.findFirst
+      // 충돌 메뉴 = sortOrder 10
+      .mockResolvedValueOnce({
+        ...menuRow,
+        publicId: "dup-id",
+        sortOrder: collidedSortOrder,
+      })
+      .mockResolvedValueOnce({ ...menuRow, sortOrder: 11 }); // 인접해 간격 없음 → fallback
+
+    await service.partialUpdateMenu(STORE_ID, "menu-public-id", OWNER, {
+      categoryId: "category-public-id",
+      sortOrder: collidedSortOrder,
+    });
+
+    // 충돌 메뉴(sortOrder = 10)는 gte: 10 범위에 들어가 updateMany로 함께 밀린다.
+    expect(prisma.menu.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          sortOrder: { gte: collidedSortOrder },
+        }),
+      })
+    );
+
+    // 그래서 menu.update는 충돌 메뉴 재이동 없이 본체(M) 1번만 호출된다.
+    expect(prisma.menu.update).toHaveBeenCalledTimes(1);
+    const [mainUpdateArg] = prisma.menu.update.mock.calls[0];
+    expect(mainUpdateArg.where).toMatchObject({ publicId: "menu-public-id" });
+    expect(mainUpdateArg.data).toMatchObject({ sortOrder: collidedSortOrder });
   });
 });

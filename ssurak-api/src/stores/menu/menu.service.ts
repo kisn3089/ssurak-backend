@@ -8,6 +8,9 @@ import {
 import { OMIT_MENU_PRIVATE } from "src/common/query/session-query.const";
 import { StorageService } from "src/storage/storage.service";
 
+/** Sparse 정렬값 간격(10, 20, 30…). 충돌 재조정 시 새 자리를 벌리는 기본 보폭. */
+const SORT_ORDER_STEP = 10;
+
 @Injectable()
 export class MenuService {
   constructor(
@@ -68,26 +71,115 @@ export class MenuService {
     ownerPublicId: string,
     updatePayload: UpdateMenuPayloadDto
   ): Promise<PublicMenu> {
-    const { categoryId, imageKey, requiredOptions, customOptions, ...rest } =
-      updatePayload;
-    if (categoryId) {
-      await this.assertCategoryBelongsToStore(categoryId, storeId);
-    }
+    const {
+      categoryId,
+      imageKey,
+      sortOrder,
+      requiredOptions,
+      customOptions,
+      ...rest
+    } = updatePayload;
 
-    // create와 동일하게 승격 후 update 실패 시 새 menu/ 객체는 orphan으로 감수한다.
-    // 구 imageKey는 DB에 그대로 남으므로 참조 무결성은 깨지지 않는다.
+    // S3 승격은 네트워크 I/O라 트랜잭션 밖에서 먼저 끝낸다
     const imageUpdate = await this.resolveImageUpdate(imageKey, ownerPublicId);
 
-    return await this.prismaService.menu.update({
-      where: this.whereMenuInStore(menuId, storeId),
-      data: {
-        ...rest,
-        ...imageUpdate,
-        requiredOptions: this.jsonInput(requiredOptions),
-        customOptions: this.jsonInput(customOptions),
-        ...(categoryId && { category: { connect: { publicId: categoryId } } }),
-      },
-      omit: OMIT_MENU_PRIVATE,
+    return await this.prismaService.$transaction(async (tx) => {
+      if (categoryId) {
+        await this.assertCategoryBelongsToStore(categoryId, storeId, tx);
+      }
+
+      // sortOrder를 지정한 경우, 같은 카테고리에 값이 겹치는 메뉴를 미리 비켜준다.
+      if (sortOrder !== undefined) {
+        await this.rebalanceSortOrder(
+          tx,
+          storeId,
+          menuId,
+          categoryId,
+          sortOrder
+        );
+      }
+
+      return await tx.menu.update({
+        where: this.whereMenuInStore(menuId, storeId),
+        data: {
+          ...rest,
+          ...imageUpdate,
+          ...(sortOrder !== undefined && { sortOrder }),
+          requiredOptions: this.jsonInput(requiredOptions),
+          customOptions: this.jsonInput(customOptions),
+          ...(categoryId && {
+            category: { connect: { publicId: categoryId } },
+          }),
+        },
+        omit: OMIT_MENU_PRIVATE,
+      });
+    });
+  }
+
+  /**
+   * 대상 메뉴가 차지하려는 `sortOrder`가 같은 카테고리의 다른 메뉴와 겹치면,
+   * 그 메뉴를 다음 슬롯의 중간값으로 밀어 충돌을 해소한다.
+   *
+   * - 정수 간격이 남아 있으면 겹친 메뉴 1건만 옮긴다(update 1회).
+   * - `sortOrder`가 인접 정수라 중간값이 없으면(간격 소진) `sortOrder` 이상을
+   *   `updateMany` + `increment` 한 문장으로 STEP만큼 밀어 자리를 비운다.
+   *   개별 update를 map으로 N번 도는 대신 단일 UPDATE로 처리해 왕복을 최소화한다.
+   */
+  private async rebalanceSortOrder(
+    tx: Prisma.TransactionClient,
+    storeId: string,
+    menuId: string,
+    categoryId: string | undefined,
+    sortOrder: number
+  ): Promise<void> {
+    // 카테고리 변경을 함께 요청했으면 그 카테고리가, 아니면 현재 카테고리가 기준.
+    const categoryPublicId =
+      categoryId ??
+      (
+        await tx.menu.findFirstOrThrow({
+          where: {
+            publicId: menuId,
+            category: { store: { publicId: storeId } },
+          },
+          select: { category: { select: { publicId: true } } },
+        })
+      ).category.publicId;
+
+    const scope = {
+      category: { publicId: categoryPublicId },
+      deletedAt: null,
+      publicId: { not: menuId },
+    } satisfies Prisma.MenuWhereInput;
+
+    const duplicate = await tx.menu.findFirst({
+      where: { ...scope, sortOrder },
+      select: { publicId: true },
+    });
+    if (!duplicate) return;
+
+    // 겹친 값 바로 위(가장 가까운 상위) 메뉴. 이게 있으면 그 사이로 밀어 넣는다.
+    const next = await tx.menu.findFirst({
+      where: { ...scope, sortOrder: { gt: sortOrder } },
+      orderBy: { sortOrder: "asc" },
+      select: { sortOrder: true },
+    });
+
+    const newOrder = next
+      ? Math.floor((sortOrder + next.sortOrder) / 2)
+      : sortOrder + SORT_ORDER_STEP;
+
+    // 중간값이 겹친 값과 같아지면(예: X와 X+1 사이) 정수 자리가 없다 → 뒤쪽을 통째로 민다.
+    if (next && newOrder === sortOrder) {
+      await tx.menu.updateMany({
+        where: { ...scope, sortOrder: { gte: sortOrder } },
+        data: { sortOrder: { increment: SORT_ORDER_STEP } },
+      });
+      return;
+    }
+
+    await tx.menu.update({
+      where: { publicId: duplicate.publicId },
+      data: { sortOrder: newOrder },
     });
   }
 
@@ -126,11 +218,19 @@ export class MenuService {
 
   private async assertCategoryBelongsToStore(
     categoryPublicId: string,
-    storePublicId: string
-  ): Promise<void> {
-    await this.prismaService.category.findFirstOrThrow({
-      where: { publicId: categoryPublicId, store: { publicId: storePublicId } },
-      select: { id: true },
-    });
+    storePublicId: string,
+    tx?: Prisma.TransactionClient
+  ): Promise<string> {
+    const category = await (tx ?? this.prismaService).category.findFirstOrThrow(
+      {
+        where: {
+          publicId: categoryPublicId,
+          store: { publicId: storePublicId },
+        },
+        select: { publicId: true },
+      }
+    );
+
+    return category.publicId;
   }
 }
