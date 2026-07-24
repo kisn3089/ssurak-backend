@@ -40,11 +40,12 @@ const menuViewFixture = (imageKey: string | null = null) =>
   menuImageService.toView(menuRowFixture(imageKey));
 
 describe("PublicMenuDto.schema", () => {
-  it("내부 식별자(id, categoryId)를 응답에서 제거한다", () => {
+  it("내부 id는 제거하되 categoryId는 노출한다 (프론트 메뉴 수정용)", () => {
     const parsed = PublicMenuDto.schema.parse(menuViewFixture());
 
     expect(parsed).not.toHaveProperty("id");
-    expect(parsed).not.toHaveProperty("categoryId");
+    // categoryId는 프론트가 수정 폼에서 카테고리를 매칭하는 데 필요해 노출한다.
+    expect(parsed.categoryId).toBe(40n);
     expect(parsed.publicId).toBe("menu-public-id");
   });
 

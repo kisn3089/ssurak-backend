@@ -11,7 +11,10 @@ export const menuImagesSchema = z.object({
   thumbnail: z.string().describe("메뉴 리스트 썸네일 (240x240)"),
 }) satisfies z.ZodType<MenuImages>;
 
-/** 메뉴 응답. `id`·`categoryId`·`imageKey`는 스키마에 없으므로 parse 시 제거된다. */
+/**
+ * 메뉴 응답. `id`·`imageKey`는 스키마에 없으므로 parse 시 제거된다.
+ * `categoryId`는 프론트 메뉴 수정 round-trip(카테고리 매칭)을 위해 노출한다.
+ */
 export const publicMenuSchema = z.object({
   publicId: z.string().describe("메뉴 고유 ID"),
   name: z.string().describe("메뉴 이름"),
@@ -23,6 +26,7 @@ export const publicMenuSchema = z.object({
     .nullable()
     .describe("슬롯별 이미지 URL. 이미지 미등록 시 null"),
   isAvailable: z.boolean().describe("판매 가능 여부"),
+  categoryId: z.bigint().describe("메뉴가 속한 카테고리 ID"),
   sortOrder: z.number().describe("카테고리 내 정렬 순서"),
   requiredOptions: menuRequiredOptionSchema.nullable().describe("필수 옵션"),
   customOptions: menuCustomOptionSchema.nullable().describe("선택 옵션"),

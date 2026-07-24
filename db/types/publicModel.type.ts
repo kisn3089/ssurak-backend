@@ -37,7 +37,7 @@ export type PublicOrderItem<Option extends "Narrow" | "Wide" = "Narrow"> =
       }
     : PublicizeOrderItem;
 
-export type PublicMenu = Omit<Menu, "id" | "categoryId">;
+export type PublicMenu = Omit<Menu, "id">;
 
 export type PublicStore = Omit<Store, "id" | "ownerId">;
 
