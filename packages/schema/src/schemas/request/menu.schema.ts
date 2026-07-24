@@ -1,11 +1,9 @@
 import z from "zod";
 import type {
-  MenuCustomOption,
   MenuCustomOptionValue,
   MenuOption,
   MenuOptionValue,
   MenuRequiredOptionValue,
-  MenuRequiredOption,
 } from "../../types/menu/menuOptions.interface";
 import { commonSchema } from "./common.schema";
 import { storeIdParamsSchema } from "./store.schema";
@@ -39,15 +37,13 @@ const customOptionValueSchema = z
   })
   .strict() satisfies z.ZodType<MenuCustomOptionValue>;
 
-const requiredOptionsSchema = z.record(
-  z.string(),
-  requiredOptionValuesSchema
-) satisfies z.ZodType<MenuRequiredOption>;
+const requiredOptionsSchema = z
+  .record(z.string(), requiredOptionValuesSchema)
+  .nullable();
 
-const customOptionsSchema = z.record(
-  z.string(),
-  customOptionValueSchema
-) satisfies z.ZodType<MenuCustomOption>;
+const customOptionsSchema = z
+  .record(z.string(), customOptionValueSchema)
+  .nullable();
 
 export const menuOptionsPayloadSchema = z.object({
   requiredOptions: requiredOptionsSchema.nullable(),
@@ -68,6 +64,7 @@ export const createMenuPayloadSchema = z
     description: z
       .string()
       .max(100, "메뉴 설명은 최대 100자까지 가능합니다.")
+      .nullable()
       .optional(),
     // 업로드 응답으로 받은 임시 키(`tmp/{ownerId}/{cuid}`)를 그대로 실어 보낸다.
     // URL 형식 검증은 의미가 없다 — 서버가 요청자 소유인지를 직접 대조한다.

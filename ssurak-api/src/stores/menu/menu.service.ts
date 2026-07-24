@@ -20,7 +20,8 @@ export class MenuService {
     ownerPublicId: string,
     createPayload: CreateMenuPayloadDto
   ): Promise<PublicMenu> {
-    const { categoryId, imageKey, ...rest } = createPayload;
+    const { categoryId, imageKey, requiredOptions, customOptions, ...rest } =
+      createPayload;
     await this.assertCategoryBelongsToStore(categoryId, storeId);
 
     // 이미지를 먼저 정식 경로로 승격한 뒤 DB에 쓴다. 이 순서라면 create가 실패했을 때
@@ -34,10 +35,21 @@ export class MenuService {
       data: {
         ...rest,
         imageKey: promotedKey,
+        requiredOptions: this.jsonInput(requiredOptions),
+        customOptions: this.jsonInput(customOptions),
         category: { connect: { publicId: categoryId } },
       },
       omit: OMIT_MENU_PRIVATE,
     });
+  }
+
+  /**
+   * nullable Json payload를 Prisma 입력으로 정규화한다.
+   * Prisma의 Json 필드는 raw `null`을 받지 않으므로 null은 컬럼 NULL(DbNull)로 지우고,
+   * undefined는 "건드리지 않음"으로 그대로 흘린다.
+   */
+  private jsonInput<T>(value: T | null | undefined) {
+    return value === null ? Prisma.DbNull : value;
   }
 
   async getMenuUnique(storeId: string, menuId: string): Promise<PublicMenu> {
@@ -56,7 +68,8 @@ export class MenuService {
     ownerPublicId: string,
     updatePayload: UpdateMenuPayloadDto
   ): Promise<PublicMenu> {
-    const { categoryId, imageKey, ...rest } = updatePayload;
+    const { categoryId, imageKey, requiredOptions, customOptions, ...rest } =
+      updatePayload;
     if (categoryId) {
       await this.assertCategoryBelongsToStore(categoryId, storeId);
     }
@@ -70,6 +83,8 @@ export class MenuService {
       data: {
         ...rest,
         ...imageUpdate,
+        requiredOptions: this.jsonInput(requiredOptions),
+        customOptions: this.jsonInput(customOptions),
         ...(categoryId && { category: { connect: { publicId: categoryId } } }),
       },
       omit: OMIT_MENU_PRIVATE,
