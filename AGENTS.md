@@ -48,7 +48,9 @@ Docker 상세(스테이지 구조, 환경변수 배치 규칙, 트러블슈팅)�
 
 ## 코딩 규칙
 
-1. **타입 단언(`as`) 금지** — 제네릭 기본값, 유니온/교차 타입 등 올바른 타입 설계로 해결한다.
+1. **타입 단언(`as`) 금지** — `as`, `as unknown as`, `as never`, `as any` 모두 금지. 제네릭 기본값, 유니온/교차 타입, 타입 가드(`in`/`typeof`), `satisfies` 등 올바른 타입 설계로 해결한다.
+   - 테스트 mock 반환값도 예외 아님: 부분 객체를 `as`로 우겨넣지 말고, `{ ...fixture, 덮어쓸필드 }`처럼 완전한 타입의 fixture를 스프레드해 넘긴다.
+   - mock 호출 인자를 검증할 때는 결과를 `as`로 캐스팅해 필드를 파내지 말고 `expect.objectContaining`/`toMatchObject`로 매칭한다.
 2. **요청 검증**은 `ZodValidation` 가드 (`@UseGuards(ZodValidation({ params, body }))`), DTO는 `packages/schema`의 zod 스키마에서 `createZodDto`로 파생한다.
 3. **응답 직렬화**는 컨트롤러 반환 지점에서 명시적 parse: `PublicXxxDto.schema.parse(entity)`. `ClassSerializerInterceptor`/`@Exclude` 패턴은 사용하지 않는다.
 4. **DB 타입은 `@ssurak/db`에서만 import** — 단, 외부(API 응답)로 나가는 계약은 `@ssurak/schema`의 response 스키마가 담당한다.
