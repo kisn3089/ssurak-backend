@@ -84,6 +84,11 @@ services:
       # dev 프론트는 호스트에서 실행되므로 CORS 오리진은 localhost 고정
       ORDER_APP_URL: http://localhost:3000
       CONSOLE_APP_URL: http://localhost:3001
+      # 아래 볼륨으로 마운트한 전용 자격증명 디렉토리에서 쓸 프로필을 지정한다.
+      # .env가 아니라 여기 둔다 — compose의 environment는 프로세스 시작 전에
+      # 실제 환경변수로 박히지만, .env는 ConfigModule이 읽는 시점에 의존해서
+      # SDK 기본 체인이 못 볼 수 있다.
+      AWS_PROFILE: ssurak-dev
     ports:
       - "127.0.0.1:${SERVER_PORT}:8080"
     depends_on:
@@ -99,6 +104,16 @@ services:
       - /app/ssurak-api/node_modules
       - /app/db/node_modules
       - /app/packages/schema/node_modules
+      # ssurak-dev 프로필 하나만 담은 전용 디렉토리를 읽기 전용으로 빌려준다.
+      # 전체 ~/.aws 를 마운트하면 컨테이너 침해 시 다른 프로필 자격증명까지
+      # 새어나가므로, 이 서비스 몫만 격리해 최소 권한으로 넘긴다.
+      # 이미지에 키를 굽지 않으려는 것이므로 :ro 를 떼지 말 것. dev 타깃은 USER
+      # 지정이 없어 root 로 돌기 때문에 마운트 지점이 /root/.aws 다.
+      # 준비(호스트에서 1회):
+      #   mkdir -p ~/.aws-ssurak-dev
+      #   # ~/.aws-ssurak-dev/credentials → [ssurak-dev] 자격증명만
+      #   # ~/.aws-ssurak-dev/config      → [profile ssurak-dev] region 등
+      - ~/.aws-ssurak-dev:/root/.aws:ro
     # JWT_*, REDIS_PASSWORD 등 시크릿 주입 (environment: 값이 우선 적용됨)
     env_file:
       - .env

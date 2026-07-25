@@ -28,7 +28,7 @@ export const INCLUDE_TABLE = {
 } as const;
 
 const AVAILABLE_MENU_FILTER = { deletedAt: null } as const;
-export const OMIT_MENU_PRIVATE = { id: true, categoryId: true } as const;
+export const OMIT_MENU_PRIVATE = { id: true } as const;
 // sortOrder 동률(기본값 0) 시 생성 순서로 결정적 정렬 보장
 const CATEGORY_ORDER_BY: Prisma.CategoryOrderByWithRelationInput[] = [
   { sortOrder: "asc" },

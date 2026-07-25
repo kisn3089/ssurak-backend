@@ -54,6 +54,7 @@ export const boardTableSchema = publicTableSchema.extend({
 
 /** 카테고리 + 판매 중인 메뉴 목록. 메뉴판 조회에서 사용한다. */
 export const categoryWithMenusSchema = z.object({
+  id: z.bigint().describe("카테고리 ID (메뉴의 categoryId와 매칭용)"),
   publicId: z.string().describe("카테고리 고유 ID"),
   name: z.string().describe("카테고리 이름"),
   sortOrder: z.number().describe("카테고리 표시 순서"),

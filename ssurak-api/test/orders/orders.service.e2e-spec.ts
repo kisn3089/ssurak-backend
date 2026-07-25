@@ -6,6 +6,7 @@ import type Redlock from "redlock";
 import { CartService } from "src/carts/carts.service";
 import { SessionClient } from "src/internal/clients/session.client";
 import { OrdersService } from "src/orders/orders/orders.service";
+import { MenuImageService } from "src/common/image/menu-image.service";
 import { PrismaService } from "src/prisma/prisma.service";
 import { REDLOCK_CLIENT } from "src/redis/redis.module";
 import { REDIS_CLIENT } from "src/redis/redis.provider";
@@ -250,6 +251,7 @@ describe("OrdersService (통합)", () => {
           proxiedPrisma,
           app.get(SessionClient),
           cartService,
+          app.get(MenuImageService),
           app.get<Redlock>(REDLOCK_CLIENT)
         )
       );

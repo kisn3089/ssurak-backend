@@ -6,6 +6,7 @@ import { Prisma } from "@ssurak/db";
 import { getValidatedMenuOptionsSnapshot } from "../menu/options";
 import { ExtendedMap } from "src/utils/helper/extendMap";
 import { validateMenuAvailableOrThrow } from "../menu/available";
+import { buildMenuImageUrls } from "src/common/image/menu-image";
 
 export type ValidatableOrderItem = {
   menuPublicId: string;
@@ -17,7 +18,8 @@ export type ValidatableOrderItem = {
 export function createOrderItemsWithValidMenu(
   orderItems: ValidatableOrderItem[],
   findMenuList: MenuValidationFields[],
-  menuPublicIds: string[]
+  menuPublicIds: string[],
+  cdnBaseUrl: string
 ): Prisma.OrderItemCreateWithoutOrderInput[] {
   const menuMap = new ExtendedMap<string, MenuValidationFields>(
     findMenuList.map((menu) => [menu.publicId, menu])
@@ -41,7 +43,8 @@ export function createOrderItemsWithValidMenu(
       return {
         menu: { connect: { publicId: orderItem.menuPublicId } },
         menuName: menu.name,
-        menuImageUrl: menu.imageUrl,
+        menuImageUrl:
+          buildMenuImageUrls(menu.imageKey, cdnBaseUrl)?.thumbnail ?? null,
         basePrice: menu.price,
         unitPrice: menu.price + optionsPrice,
         optionsPrice,

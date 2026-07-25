@@ -11,7 +11,7 @@ const menuFixture = (
   publicId: "menu-public-id",
   name: "아메리카노",
   price: 3000,
-  imageUrl: null,
+  imageKey: null,
   requiredOptions: null,
   customOptions: null,
   isAvailable: true,

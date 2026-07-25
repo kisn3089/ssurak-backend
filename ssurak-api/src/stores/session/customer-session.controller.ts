@@ -31,6 +31,7 @@ import { CreateSessionPayloadDto } from "src/dto/request/session.dto";
 import { Session } from "src/decorators/session.decorator";
 import { SessionAuth } from "src/utils/guards/table-session-auth.guard";
 import { responseCookie } from "src/utils/cookies";
+import { MenuImageService } from "src/common/image/menu-image.service";
 
 export type UpdateCustomerTableSessionDto = z.infer<
   typeof updateCustomerSessionPayloadSchema
@@ -39,7 +40,10 @@ export type UpdateCustomerTableSessionDto = z.infer<
 @ApiTags("Customer Session")
 @Controller("sessions")
 export class CustomerSessionController {
-  constructor(private readonly sessionService: SessionService) {}
+  constructor(
+    private readonly sessionService: SessionService,
+    private readonly menuImageService: MenuImageService
+  ) {}
 
   @Post()
   @UseGuards(ZodValidation({ body: createSessionSchema }))
@@ -114,7 +118,20 @@ export class CustomerSessionController {
     const storeUntilMenus = await this.sessionService.getStoreContext(
       tableSession.sessionToken
     );
+    const { store } = storeUntilMenus.table;
 
-    return TableWithStoreContextDto.schema.parse(storeUntilMenus);
+    return TableWithStoreContextDto.schema.parse({
+      ...storeUntilMenus,
+      table: {
+        ...storeUntilMenus.table,
+        store: {
+          ...store,
+          categories: store.categories.map((category) => ({
+            ...category,
+            menus: this.menuImageService.toViewList(category.menus),
+          })),
+        },
+      },
+    });
   }
 }

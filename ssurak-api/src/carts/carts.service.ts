@@ -19,6 +19,7 @@ import {
   UpdateCartItemPayloadDto,
 } from "src/dto/request/cart.dto";
 import { CartSubscriber } from "src/realtime/cart-events.service";
+import { MenuImageService } from "src/common/image/menu-image.service";
 import { MetaInfo } from "src/realtime/realtime.constants";
 
 type ReturnCart<MetaKeys extends keyof MetaInfoList = never> = {
@@ -39,7 +40,8 @@ export class CartService {
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     @Inject(REDLOCK_CLIENT) private readonly redlock: Redlock,
-    private readonly prismaService: PrismaService
+    private readonly prismaService: PrismaService,
+    private readonly menuImageService: MenuImageService
   ) {}
 
   private cartKey(sessionToken: string) {
@@ -206,7 +208,7 @@ export class CartService {
         id: createId(),
         menuPublicId: menu.publicId,
         menuName: menu.name,
-        menuImageUrl: menu.imageUrl,
+        menuImageUrl: this.menuImageService.thumbnailUrlOf(menu.imageKey),
         basePrice: menu.price,
         optionsPrice,
         unitPrice: menu.price + optionsPrice,

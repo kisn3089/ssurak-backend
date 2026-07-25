@@ -15,6 +15,7 @@ import { MENU_VALIDATION_FIELDS_SELECT } from "src/common/query/menu-query.const
 import { OrderSubscriber } from "src/realtime/order-events.service";
 import { MetaInfo } from "src/realtime/realtime.constants";
 import { withOrderLock } from "src/utils/helper/withOrderLock";
+import { MenuImageService } from "src/common/image/menu-image.service";
 
 type UpdatedOrderItem<MetaKeys extends keyof MetaInfoList = never> = {
   orderItem: PublicOrderItem<"Wide">;
@@ -33,7 +34,10 @@ type MetaInfoList = {
 
 @Injectable()
 export class OrderItemService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly menuImageService: MenuImageService
+  ) {}
   private readonly omitPrivate = {
     id: true,
     orderId: true,
@@ -73,7 +77,7 @@ export class OrderItemService {
       data: {
         menuId: menu.id,
         menuName: menu.name,
-        menuImageUrl: menu.imageUrl,
+        menuImageUrl: this.menuImageService.thumbnailUrlOf(menu.imageKey),
         basePrice: menu.price,
         unitPrice: menu.price + optionsPrice,
         optionsPrice,
@@ -207,7 +211,7 @@ export class OrderItemService {
       data: {
         menu: { connect: { id: menu.id } },
         menuName: menu.name,
-        menuImageUrl: menu.imageUrl,
+        menuImageUrl: this.menuImageService.thumbnailUrlOf(menu.imageKey),
         basePrice: menu.price,
         unitPrice: menu.price + optionsPrice,
         optionsPrice,

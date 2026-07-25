@@ -11,7 +11,8 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { MenuService } from "./menu.service";
-import type { Owner, PublicCategoryWithMenus, PublicMenu } from "@ssurak/db";
+import type { Owner } from "@ssurak/db";
+import { MenuImageService } from "src/common/image/menu-image.service";
 import { ZodValidation } from "src/utils/guards/zod-validation.guard";
 import { Client } from "src/decorators/client.decorator";
 import { PublicMenuDto } from "../../dto/response/menu.dto";
@@ -43,7 +44,8 @@ import { CategoryService } from "./category.service";
 export class MenuController {
   constructor(
     private readonly menuService: MenuService,
-    private readonly categoryService: CategoryService
+    private readonly categoryService: CategoryService,
+    private readonly menuImageService: MenuImageService
   ) {}
 
   @Post()
@@ -55,20 +57,32 @@ export class MenuController {
   )
   @DocsMenuCreate()
   async create(
+    @Client() client: Owner,
     @Param("storeId") storeId: string,
     @Body() createMenuPayload: CreateMenuPayloadDto
-  ) {
-    return await this.menuService.createMenu(storeId, createMenuPayload);
+  ): Promise<PublicMenuDto> {
+    const created = await this.menuService.createMenu(
+      storeId,
+      client.publicId,
+      createMenuPayload
+    );
+
+    return PublicMenuDto.schema.parse(this.menuImageService.toView(created));
   }
 
   @Get()
   @UseGuards(ZodValidation({ params: storeIdParamsSchema }))
   @DocsMenuGetList()
-  async list(
-    @Client() client: Owner,
-    @Param("storeId") storeId: string
-  ): Promise<PublicCategoryWithMenus[]> {
-    return await this.categoryService.getCategoryWithMenuList(client, storeId);
+  async list(@Client() client: Owner, @Param("storeId") storeId: string) {
+    const categories = await this.categoryService.getCategoryWithMenuList(
+      client,
+      storeId
+    );
+
+    return categories.map((category) => ({
+      ...category,
+      menus: this.menuImageService.toViewList(category.menus),
+    }));
   }
 
   @Get(":menuId")
@@ -80,7 +94,7 @@ export class MenuController {
   ): Promise<PublicMenuDto> {
     const findMenu = await this.menuService.getMenuUnique(storeId, menuId);
 
-    return PublicMenuDto.schema.parse(findMenu);
+    return PublicMenuDto.schema.parse(this.menuImageService.toView(findMenu));
   }
 
   @Patch(":menuId")
@@ -92,15 +106,19 @@ export class MenuController {
   )
   @DocsMenuUpdate()
   async partialUpdate(
+    @Client() client: Owner,
     @Param("storeId") storeId: string,
     @Param("menuId") menuId: string,
     @Body() updateMenuPayload: UpdateMenuPayloadDto
-  ): Promise<PublicMenu> {
-    return await this.menuService.partialUpdateMenu(
+  ): Promise<PublicMenuDto> {
+    const updated = await this.menuService.partialUpdateMenu(
       storeId,
       menuId,
+      client.publicId,
       updateMenuPayload
     );
+
+    return PublicMenuDto.schema.parse(this.menuImageService.toView(updated));
   }
 
   @Delete(":menuId")

@@ -8,6 +8,7 @@ import type { Menu } from "../menu/menu.interface";
  * 고객 매장 컨텍스트는 DTO에서 그 둘을 제외하므로 공통 필드만 신뢰할 수 있다.
  */
 export interface Category {
+  id: bigint;
   publicId: string;
   name: string;
   /** 카테고리 표시 순서 (Sparse 패턴: 10, 20, 30...) */

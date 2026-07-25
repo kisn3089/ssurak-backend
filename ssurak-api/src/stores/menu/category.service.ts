@@ -6,7 +6,7 @@ import { PrismaService } from "src/prisma/prisma.service";
 @Injectable()
 export class CategoryService {
   constructor(private readonly prismaService: PrismaService) {}
-  private readonly OMIT_CATEGORY_PRIVATE = { id: true, storeId: true } as const;
+  private readonly OMIT_CATEGORY_PRIVATE = { storeId: true } as const;
 
   async getCategoryWithMenuList(
     client: Owner,

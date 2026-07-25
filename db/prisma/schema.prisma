@@ -174,7 +174,9 @@ model Menu {
   name            String
   price           Int
   description     String?   @db.VarChar(500)
-  imageUrl        String?   @map("image_url") @db.VarChar(500)
+  /// S3 object key의 prefix(`menu/{cuid}`). variant와 확장자는 뺀다.
+  /// 절대 URL이 아니라 key만 저장해야 CDN 도메인·버킷이 바뀌어도 레코드가 살아남는다.
+  imageKey        String?   @map("image_key") @db.VarChar(255)
   isAvailable     Boolean   @default(true) @map("is_available")
   /**
    * 카테고리 내 메뉴 표시 순서 (Sparse 패턴: 10, 20, 30...)

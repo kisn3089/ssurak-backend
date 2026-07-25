@@ -60,6 +60,12 @@ jobs:
           JWT_AUDIENCE=console
           ORDER_APP_URL=http://localhost:3000
           CONSOLE_APP_URL=http://localhost:3001
+          # 앱 부트스트랩이 getOrThrow로 읽는 값들(S3Client·StorageService·
+          # MenuImageService). full-app e2e가 AppModule을 띄우므로 없으면 부트가
+          # 깨진다. 실제 AWS 호출은 없으니 더미로 충분하다.
+          AWS_REGION=ap-northeast-2
+          S3_BUCKET=ssurak-media-test
+          CDN_BASE_URL=https://cdn.test.local
           EOF
 
       # postinstall이 prisma generate까지 수행한다

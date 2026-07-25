@@ -7,6 +7,8 @@ import {
 import { MenuValidationFields } from "src/common/validate/menu/mismatch";
 import { expectHttpException } from "test/helpers/expect-http-exception";
 
+const CDN = "https://cdn.example.com";
+
 const menuFixture = (
   overrides: Partial<MenuValidationFields> = {}
 ): MenuValidationFields => ({
@@ -14,7 +16,7 @@ const menuFixture = (
   publicId: "menu-americano",
   name: "아메리카노",
   price: 3000,
-  imageUrl: "https://cdn.example.com/americano.png",
+  imageKey: "menu/americano",
   requiredOptions: {
     사이즈: {
       options: [
@@ -42,14 +44,15 @@ describe("createOrderItemsWithValidMenu", () => {
     const result = createOrderItemsWithValidMenu(
       orderItems,
       [menuFixture()],
-      ["menu-americano"]
+      ["menu-americano"],
+      CDN
     );
 
     expect(result).toEqual([
       {
         menu: { connect: { publicId: "menu-americano" } },
         menuName: "아메리카노",
-        menuImageUrl: "https://cdn.example.com/americano.png",
+        menuImageUrl: `${CDN}/menu/americano/thumbnail.webp`,
         basePrice: 3000,
         optionsPrice: 500,
         unitPrice: 3500,
@@ -67,14 +70,15 @@ describe("createOrderItemsWithValidMenu", () => {
       publicId: "menu-water",
       name: "생수",
       price: 1000,
-      imageUrl: null,
+      imageKey: null,
       requiredOptions: null,
     });
 
     const [result] = createOrderItemsWithValidMenu(
       [{ menuPublicId: "menu-water", quantity: 1 }],
       [simpleMenu],
-      ["menu-water"]
+      ["menu-water"],
+      CDN
     );
 
     expect(result).toMatchObject({
@@ -91,7 +95,8 @@ describe("createOrderItemsWithValidMenu", () => {
         createOrderItemsWithValidMenu(
           [{ menuPublicId: "menu-ghost", quantity: 1 }],
           [menuFixture()],
-          ["menu-americano", "menu-ghost"]
+          ["menu-americano", "menu-ghost"],
+          CDN
         ),
       {
         code: "MENU_MISMATCH",
@@ -115,7 +120,8 @@ describe("createOrderItemsWithValidMenu", () => {
             },
           ],
           [unavailable],
-          ["menu-americano"]
+          ["menu-americano"],
+          CDN
         ),
       {
         code: "MENU_NOT_AVAILABLE",
