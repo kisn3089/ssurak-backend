@@ -57,6 +57,14 @@ const menuRow: Menu = {
   deletedAt: null,
 };
 
+/** 카테고리 이동 판정은 현재 소속 카테고리의 publicId만 골라 온다. */
+type MenuWithCategory = Menu & { category: { publicId: string } };
+
+const menuInCategory = (categoryPublicId: string): MenuWithCategory => ({
+  ...menuRow,
+  category: { publicId: categoryPublicId },
+});
+
 const prisma = mockDeep<PrismaService>();
 const storage = mockDeep<StorageService>();
 
@@ -77,10 +85,9 @@ beforeEach(() => {
   prisma.menu.create.mockResolvedValue(menuRow);
   prisma.menu.update.mockResolvedValue(menuRow);
   // 수정 시 현재 카테고리 조회 — 기본값은 "카테고리 이동 없음".
-  prisma.menu.findFirstOrThrow.mockResolvedValue({
-    ...menuRow,
-    category: { publicId: "category-public-id" },
-  } as never);
+  prisma.menu.findFirstOrThrow.mockResolvedValue(
+    menuInCategory("category-public-id")
+  );
   // 카테고리 맨 뒤 sortOrder 조회 — 기본값은 "메뉴 없음".
   prisma.menu.findFirst.mockResolvedValue(null);
   prisma.menu.findMany.mockResolvedValue([menuRow]);

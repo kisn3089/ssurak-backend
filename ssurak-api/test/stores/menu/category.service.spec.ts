@@ -33,6 +33,14 @@ const categoryRow: Category = {
   updatedAt: new Date(),
 };
 
+/** 삭제 경로는 남은 메뉴 수까지 세어 온다. */
+type CategoryWithMenuCount = Category & { _count: { menus: number } };
+
+const categoryWithMenuCount = (menus: number): CategoryWithMenuCount => ({
+  ...categoryRow,
+  _count: { menus },
+});
+
 const prisma = mockDeep<PrismaService>();
 const service = new CategoryService(prisma);
 
@@ -47,10 +55,7 @@ beforeEach(() => {
   prisma.category.delete.mockResolvedValue(categoryRow);
   prisma.category.findMany.mockResolvedValue([categoryRow]);
   prisma.category.findFirst.mockResolvedValue(null);
-  prisma.category.findFirstOrThrow.mockResolvedValue({
-    ...categoryRow,
-    _count: { menus: 0 },
-  } as never);
+  prisma.category.findFirstOrThrow.mockResolvedValue(categoryWithMenuCount(0));
   // $transaction(callback) 형태를 콜백에 mock client(tx)를 그대로 넘겨 실행한다.
   prisma.$transaction.mockImplementation((cb) => cb(prisma));
   prisma.$executeRaw.mockResolvedValue(0);
@@ -223,10 +228,9 @@ describe("CategoryService 조회 스코프", () => {
 describe("CategoryService.deleteCategory", () => {
   it("메뉴가 남아 있으면 409로 막고 삭제하지 않는다", async () => {
     // 소프트 삭제된 메뉴도 FK를 붙들고 있으므로 _count는 필터 없이 센다.
-    prisma.category.findFirstOrThrow.mockResolvedValue({
-      ...categoryRow,
-      _count: { menus: 1 },
-    } as never);
+    prisma.category.findFirstOrThrow.mockResolvedValue(
+      categoryWithMenuCount(1)
+    );
 
     await expect(
       service.deleteCategory(owner, STORE_ID, CATEGORY_ID)
