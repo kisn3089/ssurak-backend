@@ -5,6 +5,7 @@ import {
   Body,
   Patch,
   Param,
+  Put,
   UseGuards,
   Delete,
   HttpCode,
@@ -18,6 +19,7 @@ import { Client } from "src/decorators/client.decorator";
 import { PublicMenuDto } from "../../dto/response/menu.dto";
 import {
   createMenuPayloadSchema,
+  reorderMenusPayloadSchema,
   storeIdAndMenuIdParamsSchema,
   storeIdParamsSchema,
   updateMenuPayloadSchema,
@@ -27,10 +29,12 @@ import {
   DocsMenuDelete,
   DocsMenuGetList,
   DocsMenuGetUnique,
+  DocsMenuReorder,
   DocsMenuUpdate,
 } from "src/docs/menu.docs";
 import {
   CreateMenuPayloadDto,
+  ReorderMenusPayloadDto,
   UpdateMenuPayloadDto,
 } from "src/dto/request/menu.dto";
 import { StoreAccessGuard } from "src/utils/guards/store-access.guard";
@@ -83,6 +87,32 @@ export class MenuController {
       ...category,
       menus: this.menuImageService.toViewList(category.menus),
     }));
+  }
+
+  /**
+   * 순서 리소스 전체 교체. `:menuId` 라우트보다 먼저 선언해야
+   * "reorder"가 메뉴 ID로 잡히지 않는다.
+   */
+  @Put("reorder")
+  @UseGuards(
+    ZodValidation({
+      params: storeIdParamsSchema,
+      body: reorderMenusPayloadSchema,
+    })
+  )
+  @DocsMenuReorder()
+  async reorder(
+    @Param("storeId") storeId: string,
+    @Body() reorderMenusPayload: ReorderMenusPayloadDto
+  ): Promise<PublicMenuDto[]> {
+    const reordered = await this.menuService.reorderMenus(
+      storeId,
+      reorderMenusPayload
+    );
+
+    return this.menuImageService
+      .toViewList(reordered)
+      .map((menu) => PublicMenuDto.schema.parse(menu));
   }
 
   @Get(":menuId")
