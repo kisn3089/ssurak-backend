@@ -31,6 +31,11 @@ const EXCEPTION_CONTENTS = {
     code: "INVALID_ROLE",
     message: "유효하지 않은 사용자 역할입니다.",
   },
+  /** ---Reorder--- */
+  REORDER_IN_PROGRESS: {
+    code: "REORDER_IN_PROGRESS",
+    message: "다른 정렬 변경이 처리 중입니다. 잠시 후 다시 시도해주세요.",
+  },
   /** ---Category--- */
   CATEGORY_HAS_MENUS: {
     code: "CATEGORY_HAS_MENUS",

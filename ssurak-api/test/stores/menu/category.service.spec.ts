@@ -54,7 +54,8 @@ beforeEach(() => {
   // $transaction(callback) 형태를 콜백에 mock client(tx)를 그대로 넘겨 실행한다.
   prisma.$transaction.mockImplementation((cb) => cb(prisma));
   prisma.$executeRaw.mockResolvedValue(0);
-  prisma.$queryRaw.mockResolvedValue([]);
+  // GET_LOCK 획득 성공이 기본값. 0이면 다른 재정렬이 진행 중이라는 뜻이다.
+  prisma.$queryRaw.mockResolvedValue([{ acquired: 1 }]);
 
   prisma.$executeRaw.mockClear();
   prisma.$queryRaw.mockClear();
@@ -102,15 +103,37 @@ describe("CategoryService.reorderCategories", () => {
       publicIds.map((publicId) => ({ ...categoryRow, publicId }))
     );
 
-  it("재정렬 전에 store 행을 FOR UPDATE로 잠근다", async () => {
+  it("매장별 어드바이저리 락을 잡고 끝나면 해제한다", async () => {
     mockCurrent("c1", "c2", "c3");
 
     await service.reorderCategories(owner, STORE_ID, payload);
 
-    // 락이 없으면 동시 재정렬이 서로의 재번호를 덮어쓴다.
-    const [sql] = prisma.$queryRaw.mock.calls[0];
-    expect("strings" in sql && sql.strings.join("")).toContain("FOR UPDATE");
-    expect("values" in sql && sql.values).toEqual([STORE_ID]);
+    // 락이 없으면 동시 재정렬이 서로의 재번호를 덮어쓴다. 다만 store 행을 잠그면
+    // 그 행의 FK 자식(order 등) INSERT까지 같이 막히므로 이름만 잠근다.
+    const [acquire] = prisma.$queryRaw.mock.calls[0];
+    expect("strings" in acquire && acquire.strings.join("")).toContain(
+      "GET_LOCK"
+    );
+    expect("values" in acquire && acquire.values).toEqual([
+      `reorder:${STORE_ID}`,
+      3,
+    ]);
+
+    const [release] = prisma.$queryRaw.mock.calls.at(-1)!;
+    expect("strings" in release && release.strings.join("")).toContain(
+      "RELEASE_LOCK"
+    );
+  });
+
+  it("락을 못 잡으면 409로 돌려보내고 아무것도 쓰지 않는다", async () => {
+    mockCurrent("c1", "c2", "c3");
+    prisma.$queryRaw.mockResolvedValue([{ acquired: 0 }]);
+
+    await expect(
+      service.reorderCategories(owner, STORE_ID, payload)
+    ).rejects.toThrowError(HttpException);
+
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
   });
 
   it("요청 순서대로 10, 20, 30을 CASE 한 방으로 다시 매긴다", async () => {

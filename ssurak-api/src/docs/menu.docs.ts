@@ -39,7 +39,8 @@ const meta = {
   orderMismatch: {
     status: 409,
     description:
-      "요청한 목록이 카테고리의 현재 메뉴 집합과 불일치 (stale 목록)",
+      "요청한 목록이 카테고리의 현재 메뉴 집합과 불일치(stale 목록), " +
+      "또는 같은 매장의 다른 정렬 변경이 처리 중(REORDER_IN_PROGRESS)",
   },
 };
 

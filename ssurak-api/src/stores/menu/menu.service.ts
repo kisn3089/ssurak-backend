@@ -1,19 +1,22 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "src/prisma/prisma.service";
-import { Prisma, PublicMenu } from "@ssurak/db";
+import { Owner, Prisma, PublicMenu } from "@ssurak/db";
 import {
   CreateMenuPayloadDto,
   ReorderMenusPayloadDto,
   UpdateMenuPayloadDto,
 } from "src/dto/request/menu.dto";
-import { OMIT_MENU_PRIVATE } from "src/common/query/session-query.const";
+import {
+  MENU_ORDER_BY,
+  OMIT_MENU_PRIVATE,
+} from "src/common/query/session-query.const";
 import { StorageService } from "src/storage/storage.service";
 import {
   assertSameSet,
   renumberSortOrder,
   SORT_ORDER_STEP,
 } from "src/utils/helper/reorder";
-import { withStoreLock } from "src/utils/helper/withStoreLock";
+import { withReorderLock } from "src/utils/helper/withReorderLock";
 import { Tx } from "src/utils/helper/transactionPipe";
 
 @Injectable()
@@ -23,26 +26,21 @@ export class MenuService {
     private readonly storageService: StorageService
   ) {}
 
-  private readonly ORDER_BY_SORT: Prisma.MenuOrderByWithRelationInput[] = [
-    { sortOrder: "asc" },
-    { id: "asc" },
-  ];
-
   /**
    * 메뉴는 카테고리 안 맨 뒤에 붙는다. 동시 생성으로 sortOrder가 겹쳐도 목록은
    * id 타이브레이크로 결정적이고, 다음 재정렬에서 전부 다시 매겨진다.
    */
   async createMenu(
+    client: Owner,
     storeId: string,
-    ownerPublicId: string,
     createPayload: CreateMenuPayloadDto
   ): Promise<PublicMenu> {
     const { categoryId, imageKey, requiredOptions, customOptions, ...rest } =
       createPayload;
-    await this.assertCategoryBelongsToStore(categoryId, storeId);
+    await this.assertCategoryBelongsToStore(client, categoryId, storeId);
 
     const promotedKey = imageKey
-      ? await this.storageService.promoteMenuImage(imageKey, ownerPublicId)
+      ? await this.storageService.promoteMenuImage(imageKey, client.publicId)
       : null;
 
     return await this.prismaService.menu.create({
@@ -63,37 +61,42 @@ export class MenuService {
     return value === null ? Prisma.DbNull : value;
   }
 
-  async getMenuUnique(storeId: string, menuId: string): Promise<PublicMenu> {
+  async getMenuUnique(
+    client: Owner,
+    storeId: string,
+    menuId: string
+  ): Promise<PublicMenu> {
     return await this.prismaService.menu.findFirstOrThrow({
-      where: {
-        publicId: menuId,
-        category: { store: { publicId: storeId } },
-      },
+      where: this.whereMenuInStore(client, storeId, menuId),
       omit: OMIT_MENU_PRIVATE,
     });
   }
 
   async partialUpdateMenu(
+    client: Owner,
     storeId: string,
     menuId: string,
-    ownerPublicId: string,
     updatePayload: UpdateMenuPayloadDto
   ): Promise<PublicMenu> {
     const { categoryId, imageKey, requiredOptions, customOptions, ...rest } =
       updatePayload;
 
-    const imageUpdate = await this.resolveImageUpdate(imageKey, ownerPublicId);
+    const imageUpdate = await this.resolveImageUpdate(
+      imageKey,
+      client.publicId
+    );
 
     return await this.prismaService.$transaction(async (tx) => {
       const moveUpdate = await this.resolveCategoryMove(
         tx,
+        client,
         storeId,
         menuId,
         categoryId
       );
 
       return await tx.menu.update({
-        where: this.whereMenuInStore(menuId, storeId),
+        where: this.whereMenuInStore(client, storeId, menuId),
         data: {
           ...rest,
           ...imageUpdate,
@@ -113,16 +116,17 @@ export class MenuService {
    */
   private async resolveCategoryMove(
     tx: Tx,
+    client: Owner,
     storeId: string,
     menuId: string,
     categoryId: string | undefined
   ): Promise<Prisma.MenuUpdateInput> {
     if (!categoryId) return {};
 
-    await this.assertCategoryBelongsToStore(categoryId, storeId, tx);
+    await this.assertCategoryBelongsToStore(client, categoryId, storeId, tx);
 
     const { category } = await tx.menu.findFirstOrThrow({
-      where: this.whereMenuInStore(menuId, storeId),
+      where: this.whereMenuInStore(client, storeId, menuId),
       select: { category: { select: { publicId: true } } },
     });
     // 같은 카테고리를 그대로 보낸 경우까지 맨 뒤로 밀지 않는다.
@@ -152,15 +156,21 @@ export class MenuService {
 
   /**
    * 카테고리 안 메뉴 순서를 요청 배열대로 통째로 교체한다(멱등).
-   * 읽고-다시매기는 흐름이라 store 행을 잠가 동시 재정렬을 직렬화한다.
+   * 읽고-다시매기는 흐름이라 매장 단위 재정렬 락으로 동시 요청을 직렬화한다.
    */
   async reorderMenus(
+    client: Owner,
     storeId: string,
     { categoryId, menuIds }: ReorderMenusPayloadDto
   ): Promise<PublicMenu[]> {
     return await this.prismaService.$transaction((tx) =>
-      withStoreLock(tx, storeId, async () => {
-        await this.assertCategoryBelongsToStore(categoryId, storeId, tx);
+      withReorderLock(tx, storeId, async () => {
+        await this.assertCategoryBelongsToStore(
+          client,
+          categoryId,
+          storeId,
+          tx
+        );
 
         const current = await tx.menu.findMany({
           where: this.whereMenusInCategory(categoryId),
@@ -177,7 +187,7 @@ export class MenuService {
 
         return await tx.menu.findMany({
           where: this.whereMenusInCategory(categoryId),
-          orderBy: this.ORDER_BY_SORT,
+          orderBy: MENU_ORDER_BY,
           omit: OMIT_MENU_PRIVATE,
         });
       })
@@ -185,6 +195,7 @@ export class MenuService {
   }
 
   private async assertCategoryBelongsToStore(
+    client: Owner,
     categoryPublicId: string,
     storePublicId: string,
     tx: Tx = this.prismaService
@@ -192,7 +203,7 @@ export class MenuService {
     const category = await tx.category.findFirstOrThrow({
       where: {
         publicId: categoryPublicId,
-        store: { publicId: storePublicId },
+        ...this.whereInStore(client, storePublicId),
       },
       select: { publicId: true },
     });
@@ -214,9 +225,13 @@ export class MenuService {
     return (last?.sortOrder ?? 0) + SORT_ORDER_STEP;
   }
 
-  async softDeleteMenu(storeId: string, menuId: string): Promise<void> {
+  async softDeleteMenu(
+    client: Owner,
+    storeId: string,
+    menuId: string
+  ): Promise<void> {
     await this.prismaService.menu.update({
-      where: this.whereMenuInStore(menuId, storeId),
+      where: this.whereMenuInStore(client, storeId, menuId),
       data: { deletedAt: new Date() },
     });
   }
@@ -232,12 +247,19 @@ export class MenuService {
   }
 
   private whereMenuInStore(
-    menuId: string,
-    storeId: string
+    client: Owner,
+    storeId: string,
+    menuId: string
   ): Prisma.MenuWhereUniqueInput {
     return {
       publicId: menuId,
-      category: { store: { publicId: storeId } },
+      category: this.whereInStore(client, storeId),
     };
+  }
+
+  private whereInStore(client: Owner, storeId: string) {
+    return {
+      store: { publicId: storeId, owner: { id: client.id } },
+    } satisfies Prisma.CategoryWhereInput;
   }
 }

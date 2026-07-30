@@ -5,7 +5,10 @@ import {
   PublicCategory,
   PublicCategoryWithMenus,
 } from "@ssurak/db";
-import { CATEGORIES } from "src/common/query/session-query.const";
+import {
+  CATEGORIES,
+  CATEGORY_ORDER_BY,
+} from "src/common/query/session-query.const";
 import { exceptionContentsIs } from "src/common/constants/exceptionContents";
 import {
   CreateCategoryPayloadDto,
@@ -18,7 +21,7 @@ import {
   renumberSortOrder,
   SORT_ORDER_STEP,
 } from "src/utils/helper/reorder";
-import { withStoreLock } from "src/utils/helper/withStoreLock";
+import { withReorderLock } from "src/utils/helper/withReorderLock";
 import { Tx } from "src/utils/helper/transactionPipe";
 
 @Injectable()
@@ -29,11 +32,6 @@ export class CategoryService {
     ...this.OMIT_CATEGORY_PRIVATE,
     id: true,
   } as const;
-
-  private readonly ORDER_BY_SORT: Prisma.CategoryOrderByWithRelationInput[] = [
-    { sortOrder: "asc" },
-    { id: "asc" },
-  ];
 
   /**
    * 카테고리는 항상 맨 뒤에 붙는다. 동시 생성으로 sortOrder가 겹쳐도 목록은
@@ -71,7 +69,7 @@ export class CategoryService {
   ): Promise<PublicCategory[]> {
     return await this.prismaService.category.findMany({
       where: this.whereInStore(client, storeId),
-      orderBy: this.ORDER_BY_SORT,
+      orderBy: CATEGORY_ORDER_BY,
       omit: this.OMIT_CATEGORY_PUBLIC,
     });
   }
@@ -106,7 +104,7 @@ export class CategoryService {
     { categoryIds }: ReorderCategoriesPayloadDto
   ): Promise<PublicCategory[]> {
     return await this.prismaService.$transaction((tx) =>
-      withStoreLock(tx, storeId, async () => {
+      withReorderLock(tx, storeId, async () => {
         const current = await tx.category.findMany({
           where: this.whereInStore(client, storeId),
           select: { publicId: true },
@@ -122,18 +120,13 @@ export class CategoryService {
 
         return await tx.category.findMany({
           where: this.whereInStore(client, storeId),
-          orderBy: this.ORDER_BY_SORT,
+          orderBy: CATEGORY_ORDER_BY,
           omit: this.OMIT_CATEGORY_PUBLIC,
         });
       })
     );
   }
 
-  /**
-   * 카테고리를 하드 삭제한다. 메뉴의 `categoryId`는 필수라 옮길 곳이 없고,
-   * 소프트 삭제된 메뉴도 FK를 계속 붙들고 있다. 한 건이라도 남아 있으면
-   * FK 위반(400)으로 흘리지 않고 409로 먼저 막는다.
-   */
   async deleteCategory(
     client: Owner,
     storeId: string,

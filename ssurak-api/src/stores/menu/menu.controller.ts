@@ -66,8 +66,8 @@ export class MenuController {
     @Body() createMenuPayload: CreateMenuPayloadDto
   ): Promise<PublicMenuDto> {
     const created = await this.menuService.createMenu(
+      client,
       storeId,
-      client.publicId,
       createMenuPayload
     );
 
@@ -102,10 +102,12 @@ export class MenuController {
   )
   @DocsMenuReorder()
   async reorder(
+    @Client() client: Owner,
     @Param("storeId") storeId: string,
     @Body() reorderMenusPayload: ReorderMenusPayloadDto
   ): Promise<PublicMenuDto[]> {
     const reordered = await this.menuService.reorderMenus(
+      client,
       storeId,
       reorderMenusPayload
     );
@@ -119,10 +121,15 @@ export class MenuController {
   @UseGuards(ZodValidation({ params: storeIdAndMenuIdParamsSchema }))
   @DocsMenuGetUnique()
   async unique(
+    @Client() client: Owner,
     @Param("storeId") storeId: string,
     @Param("menuId") menuId: string
   ): Promise<PublicMenuDto> {
-    const findMenu = await this.menuService.getMenuUnique(storeId, menuId);
+    const findMenu = await this.menuService.getMenuUnique(
+      client,
+      storeId,
+      menuId
+    );
 
     return PublicMenuDto.schema.parse(this.menuImageService.toView(findMenu));
   }
@@ -142,9 +149,9 @@ export class MenuController {
     @Body() updateMenuPayload: UpdateMenuPayloadDto
   ): Promise<PublicMenuDto> {
     const updated = await this.menuService.partialUpdateMenu(
+      client,
       storeId,
       menuId,
-      client.publicId,
       updateMenuPayload
     );
 
@@ -156,9 +163,10 @@ export class MenuController {
   @UseGuards(ZodValidation({ params: storeIdAndMenuIdParamsSchema }))
   @DocsMenuDelete()
   async delete(
+    @Client() client: Owner,
     @Param("storeId") storeId: string,
     @Param("menuId") menuId: string
   ): Promise<void> {
-    await this.menuService.softDeleteMenu(storeId, menuId);
+    await this.menuService.softDeleteMenu(client, storeId, menuId);
   }
 }
