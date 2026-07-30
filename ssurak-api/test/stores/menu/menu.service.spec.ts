@@ -249,6 +249,20 @@ describe("MenuService.reorderMenus", () => {
     );
   });
 
+  it("락 대기분을 더한 트랜잭션 timeout을 넘긴다", async () => {
+    prisma.menu.findMany.mockResolvedValue([
+      { ...menuRow, publicId: "m1" },
+      { ...menuRow, publicId: "m2" },
+    ]);
+
+    await service.reorderMenus(OWNER, STORE_ID, payload);
+
+    // 기본값 5초를 그대로 쓰면 3초를 기다린 요청에 2초만 남아 P2028이 나고,
+    // 의도한 409 대신 400(PRISMA_ERROR)으로 응답이 바뀐다.
+    const [, options] = prisma.$transaction.mock.calls.at(-1)!;
+    expect(options).toEqual({ timeout: 8_000 });
+  });
+
   it("락을 못 잡으면 409로 돌려보내고 아무것도 쓰지 않는다", async () => {
     // GET_LOCK 타임아웃 = 다른 재정렬이 처리 중.
     prisma.$queryRaw.mockResolvedValue([{ acquired: 0 }]);

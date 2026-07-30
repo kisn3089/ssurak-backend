@@ -184,6 +184,15 @@ describe("CategoryService.reorderCategories", () => {
     );
   });
 
+  it("락 대기분을 더한 트랜잭션 timeout을 넘긴다", async () => {
+    mockCurrent("c1", "c2", "c3");
+
+    await service.reorderCategories(owner, STORE_ID, payload);
+
+    const [, options] = prisma.$transaction.mock.calls.at(-1)!;
+    expect(options).toEqual({ timeout: 8_000 });
+  });
+
   it("락을 못 잡으면 409로 돌려보내고 아무것도 쓰지 않는다", async () => {
     mockCurrent("c1", "c2", "c3");
     prisma.$queryRaw.mockResolvedValue([{ acquired: 0 }]);

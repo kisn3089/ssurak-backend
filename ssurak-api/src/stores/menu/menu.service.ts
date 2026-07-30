@@ -16,7 +16,10 @@ import {
   renumberSortOrder,
   SORT_ORDER_STEP,
 } from "src/utils/helper/reorder";
-import { withReorderLock } from "src/utils/helper/withReorderLock";
+import {
+  REORDER_TX_TIMEOUT_MS,
+  withReorderLock,
+} from "src/utils/helper/withReorderLock";
 import { Tx } from "src/utils/helper/transactionPipe";
 
 @Injectable()
@@ -163,34 +166,36 @@ export class MenuService {
     storeId: string,
     { categoryId, menuIds }: ReorderMenusPayloadDto
   ): Promise<PublicMenu[]> {
-    return await this.prismaService.$transaction((tx) =>
-      withReorderLock(tx, storeId, async () => {
-        await this.assertCategoryBelongsToStore(
-          client,
-          categoryId,
-          storeId,
-          tx
-        );
+    return await this.prismaService.$transaction(
+      (tx) =>
+        withReorderLock(tx, storeId, async () => {
+          await this.assertCategoryBelongsToStore(
+            client,
+            categoryId,
+            storeId,
+            tx
+          );
 
-        const current = await tx.menu.findMany({
-          where: this.whereMenusInCategory(categoryId),
-          select: { publicId: true },
-        });
+          const current = await tx.menu.findMany({
+            where: this.whereMenusInCategory(categoryId),
+            select: { publicId: true },
+          });
 
-        assertSameSet(
-          current.map(({ publicId }) => publicId),
-          menuIds,
-          "MENU_ORDER_MISMATCH"
-        );
+          assertSameSet(
+            current.map(({ publicId }) => publicId),
+            menuIds,
+            "MENU_ORDER_MISMATCH"
+          );
 
-        await renumberSortOrder(tx, "menu", menuIds);
+          await renumberSortOrder(tx, "menu", menuIds);
 
-        return await tx.menu.findMany({
-          where: this.whereMenusInCategory(categoryId),
-          orderBy: MENU_ORDER_BY,
-          omit: OMIT_MENU_PRIVATE,
-        });
-      })
+          return await tx.menu.findMany({
+            where: this.whereMenusInCategory(categoryId),
+            orderBy: MENU_ORDER_BY,
+            omit: OMIT_MENU_PRIVATE,
+          });
+        }),
+      { timeout: REORDER_TX_TIMEOUT_MS }
     );
   }
 

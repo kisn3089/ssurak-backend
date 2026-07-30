@@ -5,6 +5,17 @@ import { Tx } from "./transactionPipe";
 
 const LOCK_TIMEOUT_SECONDS = 3;
 
+/** 재번호 쿼리에 남겨둘 시간. Prisma 인터랙티브 트랜잭션 기본 예산과 같다. */
+const WORK_BUDGET_MS = 5_000;
+
+/**
+ * 재정렬 트랜잭션에 줄 timeout. 락 대기가 트랜잭션 예산 안에서 소모되므로 기본값
+ * 5초를 그대로 쓰면 3초를 기다린 요청에 2초만 남는다 — 그 상태로 넘기면 P2028이 나고,
+ * 의도한 409 대신 400(PRISMA_ERROR)으로 응답이 바뀐다.
+ */
+export const REORDER_TX_TIMEOUT_MS =
+  LOCK_TIMEOUT_SECONDS * 1000 + WORK_BUDGET_MS;
+
 /**
  * 매장별 재정렬을 직렬화한다.
  * store 행을 FOR UPDATE로 잡지 않는 이유: 그 행은 order·table·category의 FK 부모라,

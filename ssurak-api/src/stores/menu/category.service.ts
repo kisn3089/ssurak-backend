@@ -21,7 +21,10 @@ import {
   renumberSortOrder,
   SORT_ORDER_STEP,
 } from "src/utils/helper/reorder";
-import { withReorderLock } from "src/utils/helper/withReorderLock";
+import {
+  REORDER_TX_TIMEOUT_MS,
+  withReorderLock,
+} from "src/utils/helper/withReorderLock";
 import { Tx } from "src/utils/helper/transactionPipe";
 
 @Injectable()
@@ -33,10 +36,6 @@ export class CategoryService {
     id: true,
   } as const;
 
-  /**
-   * 카테고리는 항상 맨 뒤에 붙는다. 동시 생성으로 sortOrder가 겹쳐도 목록은
-   * id 타이브레이크로 결정적이고, 다음 재정렬에서 전부 다시 매겨진다.
-   */
   async createCategory(
     client: Owner,
     storeId: string,
@@ -105,27 +104,29 @@ export class CategoryService {
     storeId: string,
     { categoryIds }: ReorderCategoriesPayloadDto
   ): Promise<PublicCategory[]> {
-    return await this.prismaService.$transaction((tx) =>
-      withReorderLock(tx, storeId, async () => {
-        const current = await tx.category.findMany({
-          where: this.whereInStore(client, storeId),
-          select: { publicId: true },
-        });
+    return await this.prismaService.$transaction(
+      (tx) =>
+        withReorderLock(tx, storeId, async () => {
+          const current = await tx.category.findMany({
+            where: this.whereInStore(client, storeId),
+            select: { publicId: true },
+          });
 
-        assertSameSet(
-          current.map(({ publicId }) => publicId),
-          categoryIds,
-          "CATEGORY_ORDER_MISMATCH"
-        );
+          assertSameSet(
+            current.map(({ publicId }) => publicId),
+            categoryIds,
+            "CATEGORY_ORDER_MISMATCH"
+          );
 
-        await renumberSortOrder(tx, "category", categoryIds);
+          await renumberSortOrder(tx, "category", categoryIds);
 
-        return await tx.category.findMany({
-          where: this.whereInStore(client, storeId),
-          orderBy: CATEGORY_ORDER_BY,
-          omit: this.OMIT_CATEGORY_PUBLIC,
-        });
-      })
+          return await tx.category.findMany({
+            where: this.whereInStore(client, storeId),
+            orderBy: CATEGORY_ORDER_BY,
+            omit: this.OMIT_CATEGORY_PUBLIC,
+          });
+        }),
+      { timeout: REORDER_TX_TIMEOUT_MS }
     );
   }
 
