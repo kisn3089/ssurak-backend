@@ -46,8 +46,6 @@ export class AuthService {
     );
     await this.updateLastSignInByRole(role, user.publicId);
 
-    // 쿠키는 DB 작업이 모두 성공한 뒤에 설정한다 — 중간에 실패하면
-    // 오류 응답에 Set-Cookie가 실려 미등록 토큰이 클라이언트에 남는다
     responseCookie.set(response, COOKIE_TABLE.REFRESH, refreshToken, {
       expires: refreshExpiresAt,
     });
