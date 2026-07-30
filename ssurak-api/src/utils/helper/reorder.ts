@@ -41,7 +41,8 @@ export async function renumberSortOrder(
 
   await tx.$executeRaw(Prisma.sql`
     UPDATE ${tableName}
-    SET sort_order = CASE public_id ${cases} END
+    SET sort_order = CASE public_id ${cases} END,
+        updated_at = NOW(3)
     WHERE public_id IN (${Prisma.join(orderedPublicIds)})
   `);
 }
