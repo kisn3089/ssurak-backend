@@ -31,7 +31,23 @@ const EXCEPTION_CONTENTS = {
     code: "INVALID_ROLE",
     message: "유효하지 않은 사용자 역할입니다.",
   },
+  /** ---Category--- */
+  CATEGORY_HAS_MENUS: {
+    code: "CATEGORY_HAS_MENUS",
+    message:
+      "메뉴가 남아 있는 카테고리는 삭제할 수 없습니다. 메뉴를 옮기거나 삭제해주세요.",
+  },
+  CATEGORY_ORDER_MISMATCH: {
+    code: "CATEGORY_ORDER_MISMATCH",
+    message:
+      "매장의 현재 카테고리 목록과 일치하지 않습니다. 목록을 새로고침한 뒤 다시 시도해주세요.",
+  },
   /** ---Menu--- */
+  MENU_ORDER_MISMATCH: {
+    code: "MENU_ORDER_MISMATCH",
+    message:
+      "카테고리의 현재 메뉴 목록과 일치하지 않습니다. 목록을 새로고침한 뒤 다시 시도해주세요.",
+  },
   MENU_NOT_AVAILABLE: {
     code: "MENU_NOT_AVAILABLE",
     message: "요청한 메뉴는 비활성화 상태입니다.",
