@@ -267,10 +267,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const translateKoreanRecord: Record<string, string> = {
       admin_email_key: "이메일",
       owner_email_key: "이메일",
+      category_store_id_name_key: "카테고리 이름",
       // domain models
       Admin: "관리자",
       Owner: "매니저",
       Store: "매장",
+      Category: "카테고리",
       Table: "테이블",
       QRCode: "QR 코드",
       CartItem: "장바구니 항목",
