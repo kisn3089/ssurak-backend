@@ -97,6 +97,7 @@ export const DocsMenuReorder = () =>
     ApiBody({ type: ReorderMenusPayloadDto }),
     ApiResponse({ ...meta.reorder.ok, type: [PublicMenuDto] }),
     ApiResponse(meta.badRequest),
+    ApiResponse(meta.notFound),
     ApiResponse(meta.unauthorized),
     ApiResponse(meta.orderMismatch)
   );
