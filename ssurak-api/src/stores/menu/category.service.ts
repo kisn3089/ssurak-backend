@@ -42,11 +42,13 @@ export class CategoryService {
     storeId: string,
     createPayload: CreateCategoryPayloadDto
   ): Promise<PublicCategory> {
+    const store = await this.assertStoreBelongsToOwner(client, storeId);
+
     return await this.prismaService.category.create({
       data: {
         name: createPayload.name,
         sortOrder: await this.nextSortOrder(client, storeId),
-        store: { connect: { publicId: storeId } },
+        store: { connect: { id: store.id } },
       },
       omit: this.OMIT_CATEGORY_PUBLIC,
     });
@@ -146,6 +148,18 @@ export class CategoryService {
       }
 
       await tx.category.delete({ where: { id: category.id } });
+    });
+  }
+
+  /** 소유자의 매장인지 확인하고 내부 id를 돌려준다. 아니면 P2025 -> 404. */
+  private async assertStoreBelongsToOwner(
+    client: Owner,
+    storeId: string,
+    tx: Tx = this.prismaService
+  ): Promise<{ id: bigint }> {
+    return await tx.store.findFirstOrThrow({
+      where: { publicId: storeId, owner: { id: client.id } },
+      select: { id: true },
     });
   }
 

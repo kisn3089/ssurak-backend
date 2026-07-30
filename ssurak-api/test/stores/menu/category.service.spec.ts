@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { mockDeep } from "vitest-mock-extended";
 import { HttpException } from "@nestjs/common";
-import { Category, Owner } from "@ssurak/db";
+import { Category, Owner, Store } from "@ssurak/db";
 import { CategoryService } from "src/stores/menu/category.service";
 import { PrismaService } from "src/prisma/prisma.service";
 
@@ -29,6 +29,22 @@ const categoryRow: Category = {
   storeId: 1n,
   name: "커피",
   sortOrder: 10,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
+const storeRow: Store = {
+  id: 1n,
+  publicId: STORE_ID,
+  ownerId: owner.id,
+  name: "싸락 1호점",
+  phone: null,
+  address: "서울시 어딘가",
+  addressDetail: null,
+  businessHours: null,
+  description: null,
+  isOpen: true,
+  acceptedMessage: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
@@ -62,8 +78,12 @@ beforeEach(() => {
   // GET_LOCK 획득 성공이 기본값. 0이면 다른 재정렬이 진행 중이라는 뜻이다.
   prisma.$queryRaw.mockResolvedValue([{ acquired: 1 }]);
 
+  // 생성 전 소유권 확인 — 기본값은 "내 매장이 맞다".
+  prisma.store.findFirstOrThrow.mockResolvedValue(storeRow);
+
   prisma.$executeRaw.mockClear();
   prisma.$queryRaw.mockClear();
+  prisma.store.findFirstOrThrow.mockClear();
   prisma.category.create.mockClear();
   prisma.category.update.mockClear();
   prisma.category.delete.mockClear();
@@ -97,6 +117,40 @@ describe("CategoryService.createCategory", () => {
         data: expect.objectContaining({ sortOrder: 10 }),
       })
     );
+  });
+
+  /**
+   * 생성은 where로 좁힐 대상이 없어 조회 계열의 소유자 필터가 걸리지 않는다.
+   * 가드를 안 타는 호출에서 남의 매장에 카테고리가 꽂히지 않으려면 여기서 막아야 한다.
+   */
+  it("소유자의 매장인지 먼저 확인한다", async () => {
+    await service.createCategory(owner, STORE_ID, { name: "커피" });
+
+    const [arg] = prisma.store.findFirstOrThrow.mock.calls.at(-1)!;
+    expect(arg!.where).toMatchObject({
+      publicId: STORE_ID,
+      owner: { id: owner.id },
+    });
+  });
+
+  it("남의 매장이면 생성하지 않는다", async () => {
+    prisma.store.findFirstOrThrow.mockRejectedValue(new Error("P2025"));
+
+    await expect(
+      service.createCategory(owner, STORE_ID, { name: "커피" })
+    ).rejects.toThrowError();
+
+    expect(prisma.category.create).not.toHaveBeenCalled();
+  });
+
+  it("확인된 매장의 내부 id로 connect한다", async () => {
+    prisma.store.findFirstOrThrow.mockResolvedValue({ ...storeRow, id: 42n });
+
+    await service.createCategory(owner, STORE_ID, { name: "커피" });
+
+    // 방금 확인한 행을 그대로 연결한다 — connect가 소유권 검증에 의존한다는 게 드러난다.
+    const [arg] = prisma.category.create.mock.calls.at(-1)!;
+    expect(arg.data.store).toEqual({ connect: { id: 42n } });
   });
 });
 
