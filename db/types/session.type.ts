@@ -11,6 +11,8 @@ export type PublicCategoryWithMenus = Omit<Category, "id" | "storeId"> & {
   menus: PublicMenu[];
 };
 
+export type PublicCategory = Omit<Category, "id" | "storeId">;
+
 export type StoreContext = {
   table: PublicTable & {
     store: PublicStore & { categories: PublicCategoryWithMenus[] };

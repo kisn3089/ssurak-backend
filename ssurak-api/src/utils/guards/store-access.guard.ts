@@ -11,8 +11,9 @@ export class StoreAccessGuard extends AccessGuard {
   ): Promise<AccessResult> {
     const { jwt } = user;
 
+    /** admin은 매장 소유자가 아니다. */
     if (isAdmin(jwt.role)) {
-      return "GRANTED";
+      return "FORBIDDEN";
     }
 
     const ownerId = user.info.id;

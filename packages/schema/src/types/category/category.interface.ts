@@ -19,3 +19,12 @@ export interface Category {
 export type CategoryWithMenusResponse = Category & {
   menus: Menu[];
 };
+
+/**
+ * 점주 카테고리 CRUD 응답(`/stores/{storeId}/categories`).
+ * 내부 `id`는 노출하지 않고, 대신 메뉴판 응답에는 없는 타임스탬프를 실어 준다.
+ */
+export type CategoryResponse = Omit<Category, "id"> & {
+  createdAt: string;
+  updatedAt: string;
+};

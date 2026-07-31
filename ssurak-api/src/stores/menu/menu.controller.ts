@@ -5,6 +5,7 @@ import {
   Body,
   Patch,
   Param,
+  Put,
   UseGuards,
   Delete,
   HttpCode,
@@ -18,6 +19,7 @@ import { Client } from "src/decorators/client.decorator";
 import { PublicMenuDto } from "../../dto/response/menu.dto";
 import {
   createMenuPayloadSchema,
+  reorderMenusPayloadSchema,
   storeIdAndMenuIdParamsSchema,
   storeIdParamsSchema,
   updateMenuPayloadSchema,
@@ -27,10 +29,12 @@ import {
   DocsMenuDelete,
   DocsMenuGetList,
   DocsMenuGetUnique,
+  DocsMenuReorder,
   DocsMenuUpdate,
 } from "src/docs/menu.docs";
 import {
   CreateMenuPayloadDto,
+  ReorderMenusPayloadDto,
   UpdateMenuPayloadDto,
 } from "src/dto/request/menu.dto";
 import { StoreAccessGuard } from "src/utils/guards/store-access.guard";
@@ -62,8 +66,8 @@ export class MenuController {
     @Body() createMenuPayload: CreateMenuPayloadDto
   ): Promise<PublicMenuDto> {
     const created = await this.menuService.createMenu(
+      client,
       storeId,
-      client.publicId,
       createMenuPayload
     );
 
@@ -85,14 +89,47 @@ export class MenuController {
     }));
   }
 
+  /**
+   * 순서 리소스 전체 교체. `:menuId` 라우트보다 먼저 선언해야
+   * "reorder"가 메뉴 ID로 잡히지 않는다.
+   */
+  @Put("reorder")
+  @UseGuards(
+    ZodValidation({
+      params: storeIdParamsSchema,
+      body: reorderMenusPayloadSchema,
+    })
+  )
+  @DocsMenuReorder()
+  async reorder(
+    @Client() client: Owner,
+    @Param("storeId") storeId: string,
+    @Body() reorderMenusPayload: ReorderMenusPayloadDto
+  ): Promise<PublicMenuDto[]> {
+    const reordered = await this.menuService.reorderMenus(
+      client,
+      storeId,
+      reorderMenusPayload
+    );
+
+    return this.menuImageService
+      .toViewList(reordered)
+      .map((menu) => PublicMenuDto.schema.parse(menu));
+  }
+
   @Get(":menuId")
   @UseGuards(ZodValidation({ params: storeIdAndMenuIdParamsSchema }))
   @DocsMenuGetUnique()
   async unique(
+    @Client() client: Owner,
     @Param("storeId") storeId: string,
     @Param("menuId") menuId: string
   ): Promise<PublicMenuDto> {
-    const findMenu = await this.menuService.getMenuUnique(storeId, menuId);
+    const findMenu = await this.menuService.getMenuUnique(
+      client,
+      storeId,
+      menuId
+    );
 
     return PublicMenuDto.schema.parse(this.menuImageService.toView(findMenu));
   }
@@ -112,9 +149,9 @@ export class MenuController {
     @Body() updateMenuPayload: UpdateMenuPayloadDto
   ): Promise<PublicMenuDto> {
     const updated = await this.menuService.partialUpdateMenu(
+      client,
       storeId,
       menuId,
-      client.publicId,
       updateMenuPayload
     );
 
@@ -126,9 +163,10 @@ export class MenuController {
   @UseGuards(ZodValidation({ params: storeIdAndMenuIdParamsSchema }))
   @DocsMenuDelete()
   async delete(
+    @Client() client: Owner,
     @Param("storeId") storeId: string,
     @Param("menuId") menuId: string
   ): Promise<void> {
-    await this.menuService.softDeleteMenu(storeId, menuId);
+    await this.menuService.softDeleteMenu(client, storeId, menuId);
   }
 }

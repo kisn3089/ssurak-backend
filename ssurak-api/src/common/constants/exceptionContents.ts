@@ -31,7 +31,28 @@ const EXCEPTION_CONTENTS = {
     code: "INVALID_ROLE",
     message: "유효하지 않은 사용자 역할입니다.",
   },
+  /** ---Reorder--- */
+  REORDER_IN_PROGRESS: {
+    code: "REORDER_IN_PROGRESS",
+    message: "다른 정렬 변경이 처리 중입니다. 잠시 후 다시 시도해 주세요.",
+  },
+  /** ---Category--- */
+  CATEGORY_HAS_MENUS: {
+    code: "CATEGORY_HAS_MENUS",
+    message:
+      "메뉴가 남아 있는 카테고리는 삭제할 수 없습니다. 메뉴를 옮기거나 삭제해 주세요.",
+  },
+  CATEGORY_ORDER_MISMATCH: {
+    code: "CATEGORY_ORDER_MISMATCH",
+    message:
+      "매장의 현재 카테고리 목록과 일치하지 않습니다. 목록을 새로고침한 뒤 다시 시도해 주세요.",
+  },
   /** ---Menu--- */
+  MENU_ORDER_MISMATCH: {
+    code: "MENU_ORDER_MISMATCH",
+    message:
+      "카테고리의 현재 메뉴 목록과 일치하지 않습니다. 목록을 새로고침한 뒤 다시 시도해 주세요.",
+  },
   MENU_NOT_AVAILABLE: {
     code: "MENU_NOT_AVAILABLE",
     message: "요청한 메뉴는 비활성화 상태입니다.",
@@ -112,7 +133,7 @@ const EXCEPTION_CONTENTS = {
   },
   CART_LOCK_FAILED: {
     code: "CART_LOCK_FAILED",
-    message: "장바구니 잠금에 실패했습니다. 잠시 후 다시 시도해주세요.",
+    message: "장바구니 잠금에 실패했습니다. 잠시 후 다시 시도해 주세요.",
   },
   CART_IS_EMPTY: {
     code: "CART_IS_EMPTY",
