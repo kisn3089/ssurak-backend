@@ -110,15 +110,122 @@ describe("Stores API (e2e)", () => {
     });
   });
 
-  describe("미구현 엔드포인트", () => {
-    it("POST /stores/v1 은 501을 반환한다", async () => {
+  describe("POST /stores/v1", () => {
+    it("매장을 생성하고 내부 식별자 없이 반환한다", async () => {
+      const response = await request(app.getHttpServer())
+        .post("/stores/v1")
+        .set("Authorization", `Bearer ${tokenA}`)
+        .send({
+          name: "e2e-created-store",
+          address: "서울시 테스트구 생성로 10",
+          phone: "02-123-4567",
+          acceptedMessage: "주문이 접수되었습니다.",
+        })
+        .expect(201);
+
+      expect(response.body.name).toBe("e2e-created-store");
+      expect(response.body.phone).toBe("02-123-4567");
+      // 스키마에 없는 값은 DB 기본값을 따른다
+      expect(response.body.isOpen).toBe(false);
+      expect(response.body).not.toHaveProperty("id");
+      expect(response.body).not.toHaveProperty("ownerId");
+
+      // 토큰 소유자에게 귀속돼야 한다
+      const created = await prisma.store.findUniqueOrThrow({
+        where: { publicId: response.body.publicId },
+        select: { ownerId: true },
+      });
+      expect(created.ownerId).toBe(ownerA.owner.id);
+    });
+
+    it("필수 값이 없으면 400", async () => {
+      const response = await request(app.getHttpServer())
+        .post("/stores/v1")
+        .set("Authorization", `Bearer ${tokenA}`)
+        .send({ name: "주소 없는 매장" })
+        .expect(400);
+
+      expect(response.body.code).toBe("ZOD_PAYLOAD_FAILED");
+    });
+
+    it("스키마에 없는 필드를 보내면 400", async () => {
       await request(app.getHttpServer())
         .post("/stores/v1")
         .set("Authorization", `Bearer ${tokenA}`)
-        .expect(501);
+        .send({
+          name: "매장",
+          address: "서울시 테스트구 테스트로 1",
+          ownerId: "1",
+        })
+        .expect(400);
+    });
+  });
+
+  describe("PATCH /stores/v1/:storeId", () => {
+    it("보낸 필드만 수정하고 나머지는 유지한다", async () => {
+      const target = ownerA.stores[0];
+      const response = await request(app.getHttpServer())
+        .patch(`/stores/v1/${target.publicId}`)
+        .set("Authorization", `Bearer ${tokenA}`)
+        .send({ name: "e2e-renamed-store", isOpen: true })
+        .expect(200);
+
+      expect(response.body.publicId).toBe(target.publicId);
+      expect(response.body.name).toBe("e2e-renamed-store");
+      expect(response.body.isOpen).toBe(true);
+      expect(response.body.address).toBe(target.address);
     });
 
-    it("DELETE /stores/v1/:storeId 도 접근 가드 통과 후 501을 반환한다", async () => {
+    it("null을 명시하면 기존 값을 비운다", async () => {
+      const target = ownerA.stores[0];
+      await request(app.getHttpServer())
+        .patch(`/stores/v1/${target.publicId}`)
+        .set("Authorization", `Bearer ${tokenA}`)
+        .send({ description: "설명" })
+        .expect(200);
+
+      const response = await request(app.getHttpServer())
+        .patch(`/stores/v1/${target.publicId}`)
+        .set("Authorization", `Bearer ${tokenA}`)
+        .send({ description: null })
+        .expect(200);
+
+      expect(response.body.description).toBeNull();
+    });
+
+    it("0507 안심번호도 매장 번호로 등록된다", async () => {
+      const response = await request(app.getHttpServer())
+        .patch(`/stores/v1/${ownerA.stores[0].publicId}`)
+        .set("Authorization", `Bearer ${tokenA}`)
+        .send({ phone: "0507-1234-5678" })
+        .expect(200);
+
+      expect(response.body.phone).toBe("0507-1234-5678");
+    });
+
+    it("전화번호 형식이 틀리면 400", async () => {
+      const response = await request(app.getHttpServer())
+        .patch(`/stores/v1/${ownerA.stores[0].publicId}`)
+        .set("Authorization", `Bearer ${tokenA}`)
+        .send({ phone: "전화번호" })
+        .expect(400);
+
+      expect(response.body.code).toBe("ZOD_PAYLOAD_FAILED");
+    });
+
+    it("다른 owner의 매장이면 403 FORBIDDEN", async () => {
+      const response = await request(app.getHttpServer())
+        .patch(`/stores/v1/${ownerB.stores[0].publicId}`)
+        .set("Authorization", `Bearer ${tokenA}`)
+        .send({ name: "남의 매장" })
+        .expect(403);
+
+      expect(response.body.code).toBe("FORBIDDEN");
+    });
+  });
+
+  describe("미구현 엔드포인트", () => {
+    it("DELETE /stores/v1/:storeId 는 접근 가드 통과 후 501을 반환한다", async () => {
       await request(app.getHttpServer())
         .delete(`/stores/v1/${ownerA.stores[0].publicId}`)
         .set("Authorization", `Bearer ${tokenA}`)
