@@ -1,6 +1,8 @@
 import type {
   Admin,
   Menu,
+  MenuOptionChoice,
+  MenuOptionGroup,
   Order,
   OrderItem,
   Owner,
@@ -38,6 +40,19 @@ export type PublicOrderItem<Option extends "Narrow" | "Wide" = "Narrow"> =
     : PublicizeOrderItem;
 
 export type PublicMenu = Omit<Menu, "id">;
+
+export type PublicMenuOptionChoice = Omit<
+  MenuOptionChoice,
+  "id" | "optionGroupId"
+>;
+
+export type PublicMenuOptionGroup = Omit<MenuOptionGroup, "id" | "menuId"> & {
+  choices: PublicMenuOptionChoice[];
+};
+
+export type PublicMenuWithOptions = PublicMenu & {
+  options: PublicMenuOptionGroup[];
+};
 
 export type PublicStore = Omit<Store, "id" | "ownerId">;
 

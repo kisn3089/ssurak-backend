@@ -1,11 +1,14 @@
+import { OptionSnapshotGroup } from "./menuOptions.type";
 import { PublicOrderItem } from "./publicModel.type";
 import { SyncNotice } from "./syncNotice.type";
 
-export type PublicCartItem = Omit<PublicOrderItem, "publicId" | "createdAt"> & {
+export type PublicCartItem = Omit<
+  PublicOrderItem,
+  "publicId" | "createdAt" | "optionsSnapshot"
+> & {
   id: string;
   menuPublicId: string;
-  requiredOptions?: Record<string, string>;
-  customOptions?: Record<string, string>;
+  options?: OptionSnapshotGroup[];
   addedAt: string;
   fingerprint: string;
 };
