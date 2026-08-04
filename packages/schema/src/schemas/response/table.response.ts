@@ -5,7 +5,7 @@ import type { CategoryWithMenusResponse } from "../../types/category/category.in
 import type { StoreContextResponse } from "../../types/store/store.interface";
 import { isoDateTime } from "./common.response";
 import { publicStoreSchema } from "./store.response";
-import { publicMenuSchema } from "./menu.response";
+import { publicMenuWithOptionsSchema } from "./menu.response";
 import { publicOrderWithItemsSchema } from "./order.response";
 import {
   boardTableSessionSchema,
@@ -58,7 +58,7 @@ export const categoryWithMenusSchema = z.object({
   publicId: z.string().describe("카테고리 고유 ID"),
   name: z.string().describe("카테고리 이름"),
   sortOrder: z.number().describe("카테고리 표시 순서"),
-  menus: z.array(publicMenuSchema).describe("메뉴 목록"),
+  menus: z.array(publicMenuWithOptionsSchema).describe("메뉴 목록"),
 }) satisfies z.ZodType<CategoryWithMenusResponse, z.ZodTypeDef, unknown>;
 
 /**

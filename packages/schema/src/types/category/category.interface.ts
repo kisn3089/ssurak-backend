@@ -1,4 +1,4 @@
-import type { Menu } from "../menu/menu.interface";
+import type { MenuWithOptions } from "../menu/menu.interface";
 
 /**
  * 카테고리 응답.
@@ -15,9 +15,9 @@ export interface Category {
   sortOrder: number;
 }
 
-/** 카테고리 + 판매 중인 메뉴 목록. 메뉴판 조회에서 사용한다. */
+/** 카테고리 + 판매 중인 메뉴 목록. 고객 메뉴판 조회에서만 사용한다(옵션 포함). */
 export type CategoryWithMenusResponse = Category & {
-  menus: Menu[];
+  menus: MenuWithOptions[];
 };
 
 /**

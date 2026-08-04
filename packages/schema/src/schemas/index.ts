@@ -4,6 +4,7 @@ export * from "./request/admin.schema";
 export * from "./request/cart.schema";
 export * from "./request/category.schema";
 export * from "./request/menu.schema";
+export * from "./request/menuOption.schema";
 export * from "./request/order.schema";
 export * from "./request/orderItem.schema";
 export * from "./request/owner.schema";

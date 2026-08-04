@@ -1,54 +1,10 @@
 import z from "zod";
-import type {
-  MenuCustomOptionValue,
-  MenuOption,
-  MenuOptionValue,
-  MenuRequiredOptionValue,
-} from "../../types/menu/menuOptions.interface";
 import { commonSchema } from "./common.schema";
 import { storeIdParamsSchema } from "./store.schema";
 
 const menuIdParamsSchema = z
   .object({ menuId: commonSchema.cuid2("Menu") })
   .strict();
-
-const optionSchema = z
-  .object({
-    key: z.string(),
-    description: z.string().optional(),
-    price: z.number(),
-  })
-  .strict() satisfies z.ZodType<MenuOptionValue>;
-
-const requiredOptionValuesSchema = z.object({
-  options: z.array(optionSchema),
-  defaultKey: z.string(),
-}) satisfies z.ZodType<MenuRequiredOptionValue>;
-
-const triggerSchema = z
-  .object({ group: z.string(), in: z.array(z.string()) })
-  .strict();
-
-const customOptionValueSchema = z
-  .object({
-    options: z.array(optionSchema),
-    trigger: z.array(triggerSchema).optional(),
-    defaultKey: z.string(),
-  })
-  .strict() satisfies z.ZodType<MenuCustomOptionValue>;
-
-const requiredOptionsSchema = z
-  .record(z.string(), requiredOptionValuesSchema)
-  .nullable();
-
-const customOptionsSchema = z
-  .record(z.string(), customOptionValueSchema)
-  .nullable();
-
-export const menuOptionsPayloadSchema = z.object({
-  requiredOptions: requiredOptionsSchema.nullable(),
-  customOptions: customOptionsSchema.nullable(),
-}) satisfies z.ZodType<MenuOption>;
 
 export const storeIdAndMenuIdParamsSchema =
   storeIdParamsSchema.merge(menuIdParamsSchema);
@@ -74,8 +30,7 @@ export const createMenuPayloadSchema = z
     // sortOrder는 클라이언트가 쓰지 않는다 — 생성·카테고리 이동 시 항상 맨 뒤에 붙고,
     // 순서 변경은 재정렬 엔드포인트(PUT .../menus/reorder)로만 한다.
     isAvailable: z.boolean().default(true),
-    requiredOptions: requiredOptionsSchema.optional(),
-    customOptions: customOptionsSchema.optional(),
+    // 옵션은 메뉴 페이로드에 실리지 않는다 — 전용 엔드포인트로 publicId 단위 관리한다.
   })
   .strict();
 

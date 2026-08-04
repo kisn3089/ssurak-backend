@@ -1,10 +1,11 @@
 import z from "zod";
-import type { MenuImages, Menu } from "../../types/menu/menu.interface";
+import type {
+  MenuImages,
+  Menu,
+  MenuWithOptions,
+} from "../../types/menu/menu.interface";
 import { isoDateTime } from "./common.response";
-import {
-  menuCustomOptionSchema,
-  menuRequiredOptionSchema,
-} from "./menuOption.response";
+import { publicMenuOptionGroupSchema } from "./menuOption.response";
 
 export const menuImagesSchema = z.object({
   hero: z.string().describe("메뉴 상세 히어로 (780x585)"),
@@ -14,6 +15,7 @@ export const menuImagesSchema = z.object({
 /**
  * 메뉴 응답. `id`·`imageKey`는 스키마에 없으므로 parse 시 제거된다.
  * `categoryId`는 프론트 메뉴 수정 round-trip(카테고리 매칭)을 위해 노출한다.
+ * 옵션은 여기 없다 — 옵션 API로 따로 조회해 캐시를 각각 무효화한다.
  */
 export const publicMenuSchema = z.object({
   publicId: z.string().describe("메뉴 고유 ID"),
@@ -28,11 +30,16 @@ export const publicMenuSchema = z.object({
   isAvailable: z.boolean().describe("판매 가능 여부"),
   categoryId: z.bigint().describe("메뉴가 속한 카테고리 ID"),
   sortOrder: z.number().describe("카테고리 내 정렬 순서"),
-  requiredOptions: menuRequiredOptionSchema.nullable().describe("필수 옵션"),
-  customOptions: menuCustomOptionSchema.nullable().describe("선택 옵션"),
   createdAt: isoDateTime().describe("생성일"),
   updatedAt: isoDateTime().describe("수정일"),
   deletedAt: isoDateTime()
     .nullable()
     .describe("소프트 삭제 시각. 조회에서 걸러지므로 항상 null이다."),
 }) satisfies z.ZodType<Menu, z.ZodTypeDef, unknown>;
+
+/** 고객 메뉴판용. 주문 화면을 한 번에 그려야 하므로 옵션까지 실어 내려준다. */
+export const publicMenuWithOptionsSchema = publicMenuSchema.extend({
+  options: z
+    .array(publicMenuOptionGroupSchema)
+    .describe("옵션 그룹 목록. 옵션이 없으면 빈 배열이다."),
+}) satisfies z.ZodType<MenuWithOptions, z.ZodTypeDef, unknown>;
