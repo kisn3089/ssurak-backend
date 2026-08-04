@@ -9,11 +9,17 @@ import type {
 import type Redis from "ioredis";
 import Redlock from "redlock";
 import { cartSchema } from "@ssurak/schema";
+import type { MenuOptionSelection, OptionSnapshotGroup } from "@ssurak/schema";
 import { PrismaService } from "src/prisma/prisma.service";
 import { exceptionContentsIs } from "src/common/constants/exceptionContents";
 import { REDIS_CLIENT, REDLOCK_CLIENT } from "../redis/redis.provider";
 import { validateMenuAvailableOrThrow } from "src/common/validate/menu/available";
-import { getValidatedMenuOptionsSnapshot } from "src/common/validate/menu/options";
+import {
+  extractSelectionsFromSnapshot,
+  getValidatedMenuOptionsSnapshot,
+  mergeSelections,
+} from "src/common/validate/menu/options";
+import { MENU_VALIDATION_FIELDS_SELECT } from "src/common/query/menu-query.const";
 import {
   CreateCartItemPayloadDto,
   UpdateCartItemPayloadDto,
@@ -26,12 +32,6 @@ type ReturnCart<MetaKeys extends keyof MetaInfoList = never> = {
   cart: Cart;
   subscriber: CartSubscriber;
 } & MetaInfo<MetaInfoList, MetaKeys>;
-
-type CartItemFingerprint = {
-  menuPublicId: string;
-  requiredOptions?: Record<string, string>;
-  customOptions?: Record<string, string>;
-};
 
 type MetaInfoList = { menuName: string; isMerged?: boolean };
 
@@ -132,10 +132,7 @@ export class CartService {
   private async getOptionsPriceWithValidate(
     session: TableSession,
     menuPublicId: string,
-    options: {
-      requiredOptions?: Record<string, string>;
-      customOptions?: Record<string, string>;
-    }
+    options: MenuOptionSelection[] | undefined
   ) {
     const menu = await this.prismaService.menu.findFirstOrThrow({
       where: {
@@ -145,50 +142,59 @@ export class CartService {
           store: { tables: { some: { id: session.tableId } } },
         },
       },
+      select: MENU_VALIDATION_FIELDS_SELECT,
     });
 
     validateMenuAvailableOrThrow(menu);
 
-    return {
-      menu,
-      ...getValidatedMenuOptionsSnapshot(menu, {
-        requiredOptions: options.requiredOptions,
-        customOptions: options.customOptions,
-      }),
-    };
+    return { menu, ...getValidatedMenuOptionsSnapshot(menu, options) };
   }
 
-  private getCartItemFingerprint({
-    menuPublicId,
-    requiredOptions,
-    customOptions,
-  }: CartItemFingerprint) {
-    const canonical = (obj?: Record<string, string>) =>
-      obj
-        ? Object.keys(obj)
-            .sort()
-            .map((k) => `${k}=${obj[k]}`)
-            .join("&")
-        : "";
-    return `${menuPublicId}|r:${canonical(requiredOptions)}|c:${canonical(customOptions)}`;
+  /**
+   * 옵션 조합 지문. 같은 메뉴·같은 옵션을 담으면 한 줄로 합쳐지는 기준이다.
+   *
+   * 검증 엔진이 이미 메뉴 순서대로 정규화한 스냅샷을 주지만, 테스트가 손으로 만든
+   * 항목까지 같은 지문을 얻도록 방어적으로 다시 정렬한다. 수량은 정체성의 일부다 —
+   * 샷 2개와 1개는 다른 항목이라 합쳐지면 안 된다.
+   * 구분자(`| : , x`)는 cuid2 알파벳과 겹치지 않아 값 경계가 모호해지지 않는다.
+   */
+  private getCartItemFingerprint(
+    menuPublicId: string,
+    options: OptionSnapshotGroup[] = []
+  ): string {
+    const canonical = [...options]
+      .sort((a, b) => a.optionId.localeCompare(b.optionId))
+      .map((group) => {
+        const choices = [...group.choices]
+          .sort((a, b) => a.choiceId.localeCompare(b.choiceId))
+          .map((choice) => `${choice.choiceId}x${choice.quantity}`)
+          .join(",");
+        return `${group.optionId}:${choices}`;
+      })
+      .join("|");
+
+    return `${menuPublicId}|${canonical}`;
   }
 
   async addItem(
     sessionWithTable: SessionWithTable,
     payload: CreateCartItemPayloadDto
   ): Promise<ReturnCart<"menuName" | "isMerged">> {
-    const { optionsPrice, menu } = await this.getOptionsPriceWithValidate(
-      sessionWithTable,
-      payload.menuPublicId,
-      {
-        requiredOptions: payload.requiredOptions,
-        customOptions: payload.customOptions,
-      }
-    );
+    const { optionsPrice, optionsSnapshot, menu } =
+      await this.getOptionsPriceWithValidate(
+        sessionWithTable,
+        payload.menuPublicId,
+        payload.options
+      );
 
     return this.withCartLock(sessionWithTable.sessionToken, async () => {
       const cart = await this.readCart(sessionWithTable.sessionToken);
-      const fingerprint = this.getCartItemFingerprint(payload);
+      // 지문은 페이로드가 아니라 검증을 통과한 스냅샷으로 계산한다 — 그래야 표현이 달라도
+      // 실제 선택이 같으면 같은 지문이 나온다.
+      const fingerprint = this.getCartItemFingerprint(
+        payload.menuPublicId,
+        optionsSnapshot?.options
+      );
       const existingItem = cart.menus.find(
         (item) => item.fingerprint === fingerprint
       );
@@ -213,10 +219,7 @@ export class CartService {
         optionsPrice,
         unitPrice: menu.price + optionsPrice,
         quantity: payload.quantity,
-        ...(payload.requiredOptions && {
-          requiredOptions: payload.requiredOptions,
-        }),
-        ...(payload.customOptions && { customOptions: payload.customOptions }),
+        ...(optionsSnapshot && { options: optionsSnapshot.options }),
         addedAt: new Date().toISOString(),
         fingerprint,
       };
@@ -256,25 +259,25 @@ export class CartService {
         );
       }
 
-      const { requiredOptions, customOptions } = {
-        requiredOptions: payload.requiredOptions ?? updateItem.requiredOptions,
-        customOptions: payload.customOptions ?? updateItem.customOptions,
-      };
-
-      const { optionsPrice, menu } = await this.getOptionsPriceWithValidate(
-        sessionWithTable,
-        updateItem.menuPublicId,
-        {
-          requiredOptions,
-          customOptions,
-        }
+      // 페이로드에 없는 그룹은 기존 선택을 유지한다(그룹 단위 병합).
+      const selections = mergeSelections(
+        extractSelectionsFromSnapshot(
+          updateItem.options && { options: updateItem.options }
+        ),
+        payload.options
       );
 
-      const fingerprint = this.getCartItemFingerprint({
-        menuPublicId: updateItem.menuPublicId,
-        customOptions,
-        requiredOptions,
-      });
+      const { optionsPrice, optionsSnapshot, menu } =
+        await this.getOptionsPriceWithValidate(
+          sessionWithTable,
+          updateItem.menuPublicId,
+          selections
+        );
+
+      const fingerprint = this.getCartItemFingerprint(
+        updateItem.menuPublicId,
+        optionsSnapshot?.options
+      );
 
       const existingItem = cart.menus.find(
         (item) => item.id !== cartItemId && item.fingerprint === fingerprint
@@ -299,8 +302,7 @@ export class CartService {
         unitPrice: menu.price + optionsPrice,
         quantity: payload.quantity ?? updateItem.quantity,
         fingerprint,
-        ...(requiredOptions && { requiredOptions }),
-        ...(customOptions && { customOptions }),
+        options: optionsSnapshot?.options,
       });
 
       const updated = await this.writeCart(sessionWithTable, cart);

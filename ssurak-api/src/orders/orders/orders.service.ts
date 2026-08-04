@@ -37,6 +37,7 @@ import {
   validateOrderStatusTransition,
 } from "src/common/validate/order/status-transition";
 import { MENU_VALIDATION_FIELDS_SELECT } from "src/common/query/menu-query.const";
+import { extractSelectionsFromSnapshot } from "src/common/validate/menu/options";
 import { MenuImageService } from "src/common/image/menu-image.service";
 import { TABLE_OMIT } from "src/common/query/table-query.const";
 import {
@@ -81,11 +82,13 @@ export class OrdersService {
       );
     }
 
+    // 담을 때 검증했더라도 주문 시점에 다시 검증한다 — 그 사이 가격·품절이 바뀔 수 있다.
     const orderItems: ValidatableOrderItem[] = cart.menus.map((item) => ({
       menuPublicId: item.menuPublicId,
       quantity: item.quantity,
-      requiredOptions: item.requiredOptions,
-      customOptions: item.customOptions,
+      options: extractSelectionsFromSnapshot(
+        item.options && { options: item.options }
+      ),
     }));
 
     const idempotencyKey = `${session.id}:${cart.updatedAt}`;

@@ -3,6 +3,7 @@ import {
   validateMenuMismatchOrThrow,
 } from "../menu/mismatch";
 import { Prisma } from "@ssurak/db";
+import type { MenuOptionSelection } from "@ssurak/schema";
 import { getValidatedMenuOptionsSnapshot } from "../menu/options";
 import { ExtendedMap } from "src/utils/helper/extendMap";
 import { validateMenuAvailableOrThrow } from "../menu/available";
@@ -11,8 +12,7 @@ import { buildMenuImageUrls } from "src/common/image/menu-image";
 export type ValidatableOrderItem = {
   menuPublicId: string;
   quantity: number;
-  requiredOptions?: Record<string, string>;
-  customOptions?: Record<string, string>;
+  options?: MenuOptionSelection[];
 };
 
 export function createOrderItemsWithValidMenu(
@@ -34,10 +34,7 @@ export function createOrderItemsWithValidMenu(
       validateMenuAvailableOrThrow(menu);
       const { optionsPrice, optionsSnapshot } = getValidatedMenuOptionsSnapshot(
         menu,
-        {
-          requiredOptions: orderItem.requiredOptions,
-          customOptions: orderItem.customOptions,
-        }
+        orderItem.options
       );
 
       return {

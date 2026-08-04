@@ -24,9 +24,13 @@ export function assertSameSet(
   }
 }
 
+/** sparse sortOrder + public_id + updated_at을 갖춘 테이블만 이 방식으로 재번호할 수 있다. */
+type ReorderableTable =
+  "category" | "menu" | "menu_option_group" | "menu_option_choice";
+
 export async function renumberSortOrder(
   tx: Tx,
-  table: "category" | "menu",
+  table: ReorderableTable,
   orderedPublicIds: string[]
 ): Promise<void> {
   const cases = Prisma.join(
