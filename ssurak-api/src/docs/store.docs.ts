@@ -1,11 +1,20 @@
 import { applyDecorators } from "@nestjs/common";
-import { ApiOperation, ApiParam, ApiResponse } from "@nestjs/swagger";
+import { ApiBody, ApiOperation, ApiParam, ApiResponse } from "@nestjs/swagger";
 import { PublicStoreDto } from "src/dto/response/store.dto";
+import {
+  CreateStorePayloadDto,
+  UpdateStorePayloadDto,
+} from "src/dto/request/store.dto";
 import { paramsDocs } from "./params.docs";
 
 const meta = {
   create: {
     summary: "매장 생성",
+    ok: { status: 201, description: "매장 생성 성공" },
+  },
+  update: {
+    summary: "매장 수정",
+    ok: { status: 200, description: "매장 수정 성공" },
   },
   getList: {
     summary: "매장 목록 조회",
@@ -19,6 +28,7 @@ const meta = {
     summary: "매장 삭제",
   },
   notImplemented: { status: 501, description: "구현 예정" },
+  badRequest: { status: 400, description: "잘못된 요청" },
   unauthorized: { status: 401, description: "인증되지 않은 요청" },
   notFound: { status: 404, description: "매장을 찾을 수 없음" },
 };
@@ -26,7 +36,21 @@ const meta = {
 export const DocsStoreCreate = () =>
   applyDecorators(
     ApiOperation({ summary: meta.create.summary }),
-    ApiResponse(meta.notImplemented)
+    ApiBody({ type: CreateStorePayloadDto }),
+    ApiResponse({ ...meta.create.ok, type: PublicStoreDto }),
+    ApiResponse(meta.badRequest),
+    ApiResponse(meta.unauthorized)
+  );
+
+export const DocsStoreUpdate = () =>
+  applyDecorators(
+    ApiOperation({ summary: meta.update.summary }),
+    ApiParam(paramsDocs.storeId),
+    ApiBody({ type: UpdateStorePayloadDto }),
+    ApiResponse({ ...meta.update.ok, type: PublicStoreDto }),
+    ApiResponse(meta.badRequest),
+    ApiResponse(meta.unauthorized),
+    ApiResponse(meta.notFound)
   );
 
 export const DocsStoreGetList = () =>
