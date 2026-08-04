@@ -12,8 +12,7 @@ const menuFixture = (
   name: "아메리카노",
   price: 3000,
   imageKey: null,
-  requiredOptions: null,
-  customOptions: null,
+  options: [],
   isAvailable: true,
   ...overrides,
 });

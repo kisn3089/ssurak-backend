@@ -17,6 +17,7 @@ import {
   createSession,
   seedStoreDomain,
   SeededStoreDomain,
+  selectOption,
 } from "test/helpers/seed-store";
 
 describe("OrdersService (통합)", () => {
@@ -52,7 +53,7 @@ describe("OrdersService (통합)", () => {
     await cartService.addItem(session, {
       menuPublicId: domain.menuWithOptions.publicId,
       quantity: 2,
-      requiredOptions: { 사이즈: "라지" },
+      options: [selectOption(domain.menuWithOptions, "사이즈", "라지")],
     });
 
   describe("createOrderByCustomer", () => {

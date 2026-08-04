@@ -10,6 +10,7 @@ import {
   createSession,
   seedStoreDomain,
   SeededStoreDomain,
+  selectOption,
 } from "test/helpers/seed-store";
 
 describe("OrderItemService (통합)", () => {
@@ -50,8 +51,10 @@ describe("OrderItemService (통합)", () => {
               unitPrice: 4000,
               quantity: 1,
               optionsSnapshot: {
-                requiredOptions: { 사이즈: { key: "라지", price: 500 } },
-                customOptions: { 샷: { key: "샷추가", price: 500 } },
+                options: [
+                  snapshotOf("사이즈", "라지", 500),
+                  snapshotOf("샷", "샷추가", 500),
+                ],
               },
             },
           ],
@@ -60,11 +63,36 @@ describe("OrderItemService (통합)", () => {
     });
   };
 
+  /** 시드된 메뉴의 실제 publicId로 확정 스냅샷 조각을 만든다. */
+  const snapshotOf = (
+    groupName: string,
+    choiceName: string,
+    priceDelta: number
+  ) => {
+    const group = domain.menuWithOptions.options.find(
+      ({ name }) => name === groupName
+    )!;
+    const choice = group.choices.find(({ name }) => name === choiceName)!;
+
+    return {
+      optionId: group.publicId,
+      name: group.name,
+      choices: [
+        {
+          choiceId: choice.publicId,
+          name: choice.name,
+          priceDelta,
+          quantity: 1,
+        },
+      ],
+    };
+  };
+
   const firstItemOf = async (order: Order) =>
     await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id } });
 
   describe("partialUpdateOrderItem", () => {
-    it("customOptions만 보내도 기존 필수 옵션 선택이 유지된다 (부분 업데이트)", async () => {
+    it("일부 옵션 그룹만 보내도 나머지 그룹의 기존 선택이 유지된다 (부분 업데이트)", async () => {
       const order = await createOrderWithItem();
       const item = await firstItemOf(order);
 
@@ -72,13 +100,15 @@ describe("OrderItemService (통합)", () => {
         await orderItemService.partialUpdateOrderItem(
           item.publicId,
           domain.owner.id,
-          { customOptions: { 샷: "기본" } }
+          { options: [selectOption(domain.menuWithOptions, "샷", "기본")] }
         );
 
       // 기존 선택(사이즈: 라지)이 유지되고 샷만 기본으로 변경
       expect(updated.optionsSnapshot).toEqual({
-        requiredOptions: { 사이즈: { key: "라지", price: 500 } },
-        customOptions: { 샷: { key: "기본", price: 0 } },
+        options: [
+          snapshotOf("사이즈", "라지", 500),
+          snapshotOf("샷", "기본", 0),
+        ],
       });
       expect(updated.optionsPrice).toBe(500);
       expect(updated.unitPrice).toBe(3500);

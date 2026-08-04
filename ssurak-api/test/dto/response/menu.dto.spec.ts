@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ConfigService } from "@nestjs/config";
 import { PublicMenuDto } from "src/dto/response/menu.dto";
 import { MenuImageService } from "src/common/image/menu-image.service";
+import { OptionChoiceState, OptionSelectionType } from "@ssurak/db";
 
 const CDN = "https://cdn.example.com";
 
@@ -20,16 +21,35 @@ const menuRowFixture = (imageKey: string | null = null) => ({
   imageKey,
   isAvailable: true,
   sortOrder: 0,
-  requiredOptions: {
-    사이즈: {
-      options: [
-        { key: "톨", price: 0 },
-        { key: "라지", price: 500 },
+  options: [
+    {
+      publicId: "optsize",
+      name: "사이즈",
+      selectionType: OptionSelectionType.SINGLE,
+      required: true,
+      minSelect: 1,
+      maxSelect: 1,
+      sortOrder: 10,
+      enabled: true,
+      trigger: null,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      choices: [
+        {
+          publicId: "chotall",
+          name: "톨",
+          priceDelta: 0,
+          quantityEnabled: false,
+          maxQuantity: 1,
+          isDefault: true,
+          sortOrder: 10,
+          state: OptionChoiceState.AVAILABLE,
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
       ],
-      defaultKey: "톨",
     },
-  },
-  customOptions: null,
+  ],
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
   updatedAt: new Date("2026-01-01T00:00:00.000Z"),
   deletedAt: null,
@@ -66,15 +86,11 @@ describe("PublicMenuDto.schema", () => {
     expect(parsed.images).toBeNull();
   });
 
-  it("옵션 JSON 구조를 그대로 통과시키고 잘못된 구조는 거부한다", () => {
+  it("옵션은 메뉴 응답에서 제거된다 (옵션 API로 따로 내려간다)", () => {
+    // row에 options가 실려 있어도 응답으로는 나가지 않아야 한다.
+    // 나가면 프론트가 메뉴 캐시로 옵션을 렌더하게 되고, 옵션만 수정했을 때 화면이 어긋난다.
     const parsed = PublicMenuDto.schema.parse(menuViewFixture());
-    expect(parsed.requiredOptions?.사이즈.defaultKey).toBe("톨");
 
-    expect(() =>
-      PublicMenuDto.schema.parse({
-        ...menuViewFixture(),
-        requiredOptions: { 사이즈: { 잘못된: "구조" } },
-      })
-    ).toThrow();
+    expect(parsed).not.toHaveProperty("options");
   });
 });

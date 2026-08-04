@@ -50,8 +50,6 @@ const menuRow: Menu = {
   imageKey: null,
   isAvailable: true,
   sortOrder: 0,
-  requiredOptions: null,
-  customOptions: null,
   createdAt: new Date(),
   updatedAt: new Date(),
   deletedAt: null,
