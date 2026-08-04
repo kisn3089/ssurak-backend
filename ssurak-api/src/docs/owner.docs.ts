@@ -30,16 +30,23 @@ const meta = {
   },
   badRequest: { status: 400, description: "잘못된 요청" },
   unauthorized: { status: 401, description: "인증되지 않은 요청" },
+  adminOnly: { status: 403, description: "admin 토큰이 아님" },
+  duplicatedEmail: { status: 409, description: "이미 사용 중인 이메일" },
   notFound: { status: 404, description: "매장 소유자를 찾을 수 없음" },
 };
 
 export const DocsOwnerCreate = () =>
   applyDecorators(
-    ApiOperation({ summary: meta.create.summary }),
+    ApiOperation({
+      summary: meta.create.summary,
+      description: "admin 토큰으로만 호출할 수 있다 — 공개 가입 경로는 없다.",
+    }),
     ApiBody({ type: CreateOwnerPayloadDto }),
     ApiResponse({ ...meta.create.ok, type: PublicOwnerDto }),
     ApiResponse(meta.badRequest),
-    ApiResponse(meta.unauthorized)
+    ApiResponse(meta.unauthorized),
+    ApiResponse(meta.adminOnly),
+    ApiResponse(meta.duplicatedEmail)
   );
 
 export const DocsOwnerGetList = () =>

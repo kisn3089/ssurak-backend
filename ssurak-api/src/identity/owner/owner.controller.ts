@@ -33,6 +33,7 @@ import {
   UpdateOwnerPayloadDto,
 } from "src/dto/request/owner.dto";
 import { OwnerAccessGuard } from "src/utils/guards/owner-access.guard";
+import { AdminRoleGuard } from "src/utils/guards/admin-role.guard";
 
 @ApiTags("Owner")
 @ApiBearerAuth()
@@ -41,8 +42,9 @@ import { OwnerAccessGuard } from "src/utils/guards/owner-access.guard";
 export class OwnerController {
   constructor(private readonly ownerService: OwnerService) {}
 
+  /** 점주 계정은 admin이 발급한다 — 공개 가입 경로는 없다. */
   @Post()
-  @UseGuards(ZodValidation({ body: createOwnerPayloadSchema }))
+  @UseGuards(AdminRoleGuard, ZodValidation({ body: createOwnerPayloadSchema }))
   @DocsOwnerCreate()
   async create(
     @Body() createOwnerPayload: CreateOwnerPayloadDto
