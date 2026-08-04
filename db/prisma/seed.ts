@@ -4,7 +4,7 @@ import { adminSeeds } from "./data/admins";
 import { demoOwnerSeed, testOwnerSeed } from "./data/owners";
 import { demoStoreSeed, testStoreSeed } from "./data/stores";
 import { categorySeeds } from "./data/categories";
-import { menuSeeds } from "./data/menus";
+import { menuSeeds, suffixed, toOptionGroupSeedInput } from "./data/menus";
 import { demoTableSeeds, testTableSeeds } from "./data/tables";
 import { tableSessionSeeds } from "./data/sessions";
 import { orderSeeds, orderItemSeeds } from "./data/orders";
@@ -121,17 +121,31 @@ async function main() {
     categoryMapByStore.set(store.id, new Map(cats.map((c) => [c.name, c.id])));
   }
 
-  const allMenus = [demoStore, testStore].flatMap((store, index) =>
-    menuSeeds.map(({ category, ...rest }) => ({
-      ...rest,
-      publicId: `${rest.publicId}${index}`,
-      categoryId: categoryMapByStore.get(store.id)!.get(category)!,
-    }))
-  );
-  await prisma.menu.createMany({
-    data: allMenus,
-    skipDuplicates: true, // 중복 무시
-  });
+  // createMany는 중첩 쓰기를 못 하므로 메뉴마다 upsert한다.
+  // update 쪽에서 옵션을 통째로 갈아끼우므로 재시드하면 옵션 정의도 함께 갱신된다.
+  for (const [index, store] of [demoStore, testStore].entries()) {
+    for (const { category, options, ...menu } of menuSeeds) {
+      const publicId = suffixed(menu.publicId, index);
+      const categoryId = categoryMapByStore.get(store.id)!.get(category)!;
+      const optionCreate = toOptionGroupSeedInput(options, index);
+
+      await prisma.menu.upsert({
+        where: { publicId },
+        update: {
+          ...menu,
+          publicId,
+          categoryId,
+          options: { deleteMany: {}, create: optionCreate },
+        },
+        create: {
+          ...menu,
+          publicId,
+          categoryId,
+          options: { create: optionCreate },
+        },
+      });
+    }
+  }
   console.log("✅ Menus created");
 
   // ==================== Table 데이터 ====================

@@ -1,5 +1,10 @@
 import { OrderStatus } from "@prisma/client";
 import type { OrderItemOptionSnapshot } from "../../types/menuOptions.type";
+import { AMERICANO_OPTION_IDS, suffixed } from "./menus";
+
+// 주문 시드는 testStore(매장 index 1) 전용이라 옵션 id에 같은 suffix를 붙여야 한다.
+const TEST_STORE_INDEX = 1;
+const optionId = (publicId: string) => suffixed(publicId, TEST_STORE_INDEX);
 
 export type OrderSeed = {
   publicId: string;
@@ -80,18 +85,73 @@ export const orderItemSeeds: OrderItemSeed[] = [
     orderPublicId: "iz8e7twkcpn232ircc9eyd4q",
     menuName: "아메리카노",
     basePrice: 4500,
+    // 진하게(1000) + 에스프레소 샷 2개(500 × 2)
     optionsPrice: 2000,
     unitPrice: 6500,
     quantity: 2,
     optionsSnapshot: {
-      requiredOptions: {
-        원두: { key: "케냐", price: 0 },
-        종류: { key: "아이스", price: 0 },
-      },
-      customOptions: {
-        카페인: { key: "진하게", price: 1000 },
-        얼음: { key: "많이", price: 0 },
-      },
+      options: [
+        {
+          optionId: optionId(AMERICANO_OPTION_IDS.bean),
+          name: "원두",
+          choices: [
+            {
+              choiceId: optionId(AMERICANO_OPTION_IDS.beanKenya),
+              name: "케냐",
+              priceDelta: 0,
+              quantity: 1,
+            },
+          ],
+        },
+        {
+          optionId: optionId(AMERICANO_OPTION_IDS.kind),
+          name: "종류",
+          choices: [
+            {
+              choiceId: optionId(AMERICANO_OPTION_IDS.kindIce),
+              name: "아이스",
+              priceDelta: 0,
+              quantity: 1,
+            },
+          ],
+        },
+        {
+          optionId: optionId(AMERICANO_OPTION_IDS.caffeine),
+          name: "카페인",
+          choices: [
+            {
+              choiceId: optionId(AMERICANO_OPTION_IDS.caffeineStrong),
+              name: "진하게",
+              priceDelta: 1000,
+              quantity: 1,
+            },
+          ],
+        },
+        {
+          optionId: optionId(AMERICANO_OPTION_IDS.ice),
+          name: "얼음",
+          choices: [
+            {
+              choiceId: optionId(AMERICANO_OPTION_IDS.iceMuch),
+              name: "많이",
+              priceDelta: 0,
+              quantity: 1,
+            },
+          ],
+        },
+        {
+          optionId: optionId(AMERICANO_OPTION_IDS.shot),
+          name: "샷 추가",
+          choices: [
+            {
+              choiceId: optionId(AMERICANO_OPTION_IDS.shotSingle),
+              name: "에스프레소 샷",
+              priceDelta: 500,
+              quantity: 2,
+            },
+          ],
+        },
+      ],
     },
   },
   {
@@ -138,11 +198,25 @@ export const orderItemSeeds: OrderItemSeed[] = [
     orderPublicId: "y4yg7t7svyoucz9hl9cd2zur",
     menuName: "드립 커피",
     basePrice: 4600,
-    optionsPrice: 500,
-    unitPrice: 5100,
+    // 드립 커피의 얼음 옵션은 전부 추가금이 없다.
+    optionsPrice: 0,
+    unitPrice: 4600,
     quantity: 2,
     optionsSnapshot: {
-      customOptions: { 얼음: { key: "적게", price: 0 } },
+      options: [
+        {
+          optionId: optionId("optdrip1zqwnrbvx3mtk7hj5"),
+          name: "얼음",
+          choices: [
+            {
+              choiceId: optionId("chodrip3rzqwnvbm7xtk3jy6"),
+              name: "적게",
+              priceDelta: 0,
+              quantity: 1,
+            },
+          ],
+        },
+      ],
     },
   },
   {
@@ -154,11 +228,44 @@ export const orderItemSeeds: OrderItemSeed[] = [
     unitPrice: 5000,
     quantity: 1,
     optionsSnapshot: {
-      requiredOptions: {
-        원두: { key: "코스타리코", price: 500 },
-        종류: { key: "핫", price: 0 },
-      },
-      customOptions: { 카페인: { key: "연하게", price: 0 } },
+      options: [
+        {
+          optionId: optionId(AMERICANO_OPTION_IDS.bean),
+          name: "원두",
+          choices: [
+            {
+              choiceId: optionId(AMERICANO_OPTION_IDS.beanCostaRica),
+              name: "코스타리코",
+              priceDelta: 500,
+              quantity: 1,
+            },
+          ],
+        },
+        {
+          optionId: optionId(AMERICANO_OPTION_IDS.kind),
+          name: "종류",
+          choices: [
+            {
+              choiceId: optionId(AMERICANO_OPTION_IDS.kindHot),
+              name: "핫",
+              priceDelta: 0,
+              quantity: 1,
+            },
+          ],
+        },
+        {
+          optionId: optionId(AMERICANO_OPTION_IDS.caffeine),
+          name: "카페인",
+          choices: [
+            {
+              choiceId: optionId(AMERICANO_OPTION_IDS.caffeineLight),
+              name: "연하게",
+              priceDelta: 0,
+              quantity: 1,
+            },
+          ],
+        },
+      ],
     },
   },
   {
