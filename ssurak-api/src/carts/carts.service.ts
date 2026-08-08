@@ -15,9 +15,11 @@ import { exceptionContentsIs } from "src/common/constants/exceptionContents";
 import { REDIS_CLIENT, REDLOCK_CLIENT } from "../redis/redis.provider";
 import { validateMenuAvailableOrThrow } from "src/common/validate/menu/available";
 import {
+  explicitOptionIdsOf,
   extractSelectionsFromSnapshot,
   getValidatedMenuOptionsSnapshot,
   mergeSelections,
+  ValidateMenuOptionsContext,
 } from "src/common/validate/menu/options";
 import { MENU_VALIDATION_FIELDS_SELECT } from "src/common/query/menu-query.const";
 import {
@@ -132,7 +134,8 @@ export class CartService {
   private async getOptionsPriceWithValidate(
     session: TableSession,
     menuPublicId: string,
-    options: MenuOptionSelection[] | undefined
+    options: MenuOptionSelection[] | undefined,
+    context: ValidateMenuOptionsContext = {}
   ) {
     const menu = await this.prismaService.menu.findFirstOrThrow({
       where: {
@@ -147,16 +150,12 @@ export class CartService {
 
     validateMenuAvailableOrThrow(menu);
 
-    return { menu, ...getValidatedMenuOptionsSnapshot(menu, options) };
+    return { menu, ...getValidatedMenuOptionsSnapshot(menu, options, context) };
   }
 
   /**
    * 옵션 조합 지문. 같은 메뉴·같은 옵션을 담으면 한 줄로 합쳐지는 기준이다.
-   *
-   * 검증 엔진이 이미 메뉴 순서대로 정규화한 스냅샷을 주지만, 테스트가 손으로 만든
-   * 항목까지 같은 지문을 얻도록 방어적으로 다시 정렬한다. 수량은 정체성의 일부다 —
    * 샷 2개와 1개는 다른 항목이라 합쳐지면 안 된다.
-   * 구분자(`| : , x`)는 cuid2 알파벳과 겹치지 않아 값 경계가 모호해지지 않는다.
    */
   private getCartItemFingerprint(
     menuPublicId: string,
@@ -271,7 +270,8 @@ export class CartService {
         await this.getOptionsPriceWithValidate(
           sessionWithTable,
           updateItem.menuPublicId,
-          selections
+          selections,
+          { explicitOptionIds: explicitOptionIdsOf(payload.options) }
         );
 
       const fingerprint = this.getCartItemFingerprint(

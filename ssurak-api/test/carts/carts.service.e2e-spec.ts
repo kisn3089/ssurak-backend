@@ -453,6 +453,63 @@ describe("CartService.updateItem", () => {
     expect(meta.isMerged).toBe(true);
   });
 
+  /**
+   * 조건이 되는 그룹을 바꾸는 한 번의 요청으로 끝나야 한다. 저장된 선택까지 400으로 막으면
+   * 손님이 "얼음을 먼저 비우고 → 종류를 바꾸는" 두 단계를 밟아야 한다.
+   */
+  it("조건이 되는 그룹을 바꾸면 조건이 깨진 그룹의 저장된 선택은 조용히 빠진다", async () => {
+    const iceGroup: OptionGroup = {
+      ...SHOT_GROUP,
+      publicId: "opticecube",
+      name: "얼음",
+      selectionType: OptionSelectionType.SINGLE,
+      maxSelect: 1,
+      sortOrder: 30,
+      // 사이즈가 라지일 때만 노출된다.
+      trigger: [{ optionId: "optsize", choiceIds: ["cholarge"] }],
+      choices: [
+        {
+          publicId: "choiceless",
+          name: "얼음 적게",
+          priceDelta: 100,
+          quantityEnabled: false,
+          maxQuantity: 1,
+          isDefault: false,
+          sortOrder: 10,
+          state: OptionChoiceState.AVAILABLE,
+        },
+      ],
+    };
+    prismaMock.menu.findFirstOrThrow.mockResolvedValue(
+      menuFixture({ options: [SIZE_GROUP, iceGroup] })
+    );
+
+    const session = sessionFixture();
+    const { cart: added } = await service.addItem(session, {
+      menuPublicId: "menu-americano",
+      quantity: 1,
+      options: [
+        selectSize("cholarge"),
+        {
+          optionId: "opticecube",
+          choices: [{ choiceId: "choiceless", quantity: 1 }],
+        },
+      ],
+    });
+    const itemId = added.menus[0].id;
+
+    // 라지 → 톨. 얼음은 페이로드에 없지만 저장된 선택으로 병합돼 딸려온다.
+    const { cart } = await service.updateItem(session, itemId, {
+      options: [selectSize("chotall")],
+    });
+
+    expect(cart.menus[0].options?.map((group) => group.optionId)).toEqual([
+      "optsize",
+    ]);
+    expect(cart.menus[0].optionsPrice).toBe(0);
+    expect(cart.menus[0].unitPrice).toBe(3000);
+  });
+
   it("없는 아이템이면 CART_ITEM_NOT_FOUND(404)", async () => {
     const session = sessionFixture();
     await service.addItem(session, americanoPayload());

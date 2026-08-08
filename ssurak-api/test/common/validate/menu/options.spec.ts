@@ -416,6 +416,114 @@ describe("getValidatedMenuOptionsSnapshot", () => {
       expect(result.optionsPrice).toBe(0);
       expect(result).not.toHaveProperty("optionsSnapshot");
     });
+
+    /**
+     * 부분 수정에서는 병합으로 딸려온 저장된 선택이 섞인다. 이 둘을 구분하지 않으면
+     * 조건이 되는 그룹을 바꾸는 요청이 스스로 막힌다 — 토핑을 바꾸는 순간 저장돼 있던
+     * 소스 선택이 미충족이 되어 400을 던지기 때문이다.
+     */
+    it("병합으로 딸려온 선택은 조건이 깨지면 조용히 버린다", () => {
+      const result = getValidatedMenuOptionsSnapshot(
+        menuOf([toppingGroup, sauceGroup]),
+        // 저장된 소스 선택 + 이번에 보낸 토핑 변경(초코칩 → 쿠키가 아니라 선택 비움)
+        [select("opttopping"), select("optsauce", ["chochoco"])],
+        { explicitOptionIds: new Set(["opttopping"]) }
+      );
+
+      expect(result.optionsPrice).toBe(0);
+      expect(result).not.toHaveProperty("optionsSnapshot");
+    });
+
+    it("직접 보낸 선택은 조건이 깨졌으면 그대로 400을 던진다", () => {
+      expectHttpException(
+        () =>
+          getValidatedMenuOptionsSnapshot(
+            menuOf([toppingGroup, sauceGroup]),
+            [select("optsauce", ["chochoco"])],
+            { explicitOptionIds: new Set(["optsauce"]) }
+          ),
+        {
+          code: "MENU_OPTION_TRIGGER_UNSATISFIED",
+          status: HttpStatus.BAD_REQUEST,
+          details: { optionId: "optsauce" },
+        }
+      );
+    });
+
+    /** 조건이 되는 그룹이 스냅샷에서 빠지면 그걸 참조하던 그룹도 함께 떨어진다. */
+    it("연쇄로 조건이 깨진 그룹까지 함께 버린다", () => {
+      const extraGroup = group(
+        "optextra",
+        "추가 소스",
+        [choice("choextra", "소스 더", { priceDelta: 100 })],
+        {
+          sortOrder: 40,
+          trigger: [{ optionId: "optsauce", choiceIds: ["chochoco"] }],
+        }
+      );
+
+      const result = getValidatedMenuOptionsSnapshot(
+        menuOf([toppingGroup, sauceGroup, extraGroup]),
+        [
+          select("opttopping"),
+          select("optsauce", ["chochoco"]),
+          select("optextra", ["choextra"]),
+        ],
+        { explicitOptionIds: new Set(["opttopping"]) }
+      );
+
+      expect(result.optionsPrice).toBe(0);
+      expect(result).not.toHaveProperty("optionsSnapshot");
+    });
+  });
+
+  describe("비활성·삭제된 그룹의 저장된 선택", () => {
+    it("점주가 그룹을 끈 뒤라면 저장된 선택을 버리고 통과한다", () => {
+      const disabled = { ...toppingGroup, enabled: false };
+
+      const result = getValidatedMenuOptionsSnapshot(
+        menuOf([sizeGroup, disabled]),
+        [select("optsize", ["chotall"]), select("opttopping", ["chochip"])],
+        { explicitOptionIds: new Set(["optsize"]) }
+      );
+
+      expect(result.optionsPrice).toBe(0);
+      expect(result.optionsSnapshot?.options.map((o) => o.optionId)).toEqual([
+        "optsize",
+      ]);
+    });
+
+    /**
+     * 점주가 그룹을 지우면 저장된 스냅샷에만 남는다. 이걸 오류로 다루면 수량만 바꾸는
+     * 요청까지 막혀 그 항목을 영원히 수정할 수 없게 된다.
+     */
+    it("메뉴에서 사라진 그룹의 저장된 선택은 무시한다", () => {
+      const result = getValidatedMenuOptionsSnapshot(
+        menuOf([sizeGroup]),
+        [select("optsize", ["chotall"]), select("optgone", ["chogone"])],
+        { explicitOptionIds: new Set() }
+      );
+
+      expect(result.optionsSnapshot?.options.map((o) => o.optionId)).toEqual([
+        "optsize",
+      ]);
+    });
+
+    it("직접 보낸 미지의 그룹은 그대로 400을 던진다", () => {
+      expectHttpException(
+        () =>
+          getValidatedMenuOptionsSnapshot(
+            menuOf([sizeGroup]),
+            [select("optsize", ["chotall"]), select("optgone", ["chogone"])],
+            { explicitOptionIds: new Set(["optgone"]) }
+          ),
+        {
+          code: "MENU_OPTIONS_INVALID",
+          status: HttpStatus.BAD_REQUEST,
+          details: { unknownOptionId: "optgone" },
+        }
+      );
+    });
   });
 
   describe("할인 옵션(음수 priceDelta)", () => {

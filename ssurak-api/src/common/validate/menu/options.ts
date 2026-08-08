@@ -20,6 +20,17 @@ export type ValidatedMenuOptions = {
   optionsPrice: number;
 };
 
+export type ValidateMenuOptionsContext = {
+  explicitOptionIds?: Set<string>;
+};
+
+/** 페이로드가 직접 보낸 optionId 집합. 병합으로 딸려온 저장된 선택과 구분하는 데 쓴다. */
+export function explicitOptionIdsOf(
+  patch: MenuOptionSelection[] | undefined
+): Set<string> {
+  return new Set((patch ?? []).map((selection) => selection.optionId));
+}
+
 function optionsException(
   code: Parameters<typeof exceptionContentsIs>[0],
   details: Record<string, unknown>
@@ -30,13 +41,7 @@ function optionsException(
   );
 }
 
-/**
- * 트리거 충족 여부. 규칙 간에는 AND, 한 규칙의 choiceIds 안에서는 OR다.
- *
- * 참조 대상 그룹의 확정 선택을 그때그때 조회한다(`acceptedChoiceIdsOf`). 해결되지 않는
- * optionId는 던지지 않고 "미충족"으로 본다 — 데이터가 깨져도 500이 아니라
- * "선택할 수 없는 옵션"으로 흐른다.
- */
+/** 트리거 충족 여부. 규칙 간에는 AND, 한 규칙의 choiceIds 안에서는 OR다. */
 function isTriggerSatisfied(
   trigger: MenuOptionTrigger | null,
   acceptedChoiceIdsOf: (optionId: string) => Set<string> | undefined
@@ -84,11 +89,7 @@ function assertChoiceSelectable(
   }
 }
 
-/**
- * 그룹 하나를 검증해 스냅샷 조각과 가격을 만든다.
- * 선택지 순회 순서는 페이로드가 아니라 메뉴의 정렬 순서를 따른다 — 그래야 스냅샷이,
- * 나아가 장바구니 지문이 구조적으로 정규화된다.
- */
+/** 그룹 하나를 검증해 스냅샷과 가격을 만든다. */
 function validateGroupSelection(
   group: MenuOptionGroupFields,
   picked: SelectedChoice[]
@@ -145,17 +146,16 @@ type ResolvedGroup = {
   price: number;
 };
 
-/**
- * 고객이 보낸 옵션 선택을 메뉴 정의와 대조해 확정 스냅샷과 가격을 만든다.
- *
- * 트리거는 표시 순서(sortOrder)가 아니라 의존성 순서로 평가한다 — 그룹을 재정렬해도
- * 조건부 노출이 깨지지 않는다. 순환 참조는 쓰기 시점에 막지만, 런타임에서도
- * 방문 중인 그룹을 다시 만나면 "조건 미충족"으로 처리해 무한 재귀를 막는다.
- */
+/** 고객이 보낸 옵션 선택을 메뉴 정의와 대조해 확정 스냅샷과 가격을 만든다. */
 export function getValidatedMenuOptionsSnapshot(
   menu: MenuValidationFields,
-  selections: MenuOptionSelection[] | undefined
+  selections: MenuOptionSelection[] | undefined,
+  { explicitOptionIds }: ValidateMenuOptionsContext = {}
 ): ValidatedMenuOptions {
+  /** 생략됐으면 전부 직접 보낸 것으로 본다 — 생성 경로는 병합할 저장값이 없다. */
+  const isExplicit = (optionId: string): boolean =>
+    explicitOptionIds === undefined || explicitOptionIds.has(optionId);
+
   const selectionByOptionId = new Map(
     (selections ?? []).map((selection) => [selection.optionId, selection])
   );
@@ -194,22 +194,23 @@ export function getValidatedMenuOptionsSnapshot(
   function resolveGroup(group: MenuOptionGroupFields): ResolvedGroup {
     const picked = selectionByOptionId.get(group.publicId)?.choices ?? [];
 
+    // 고를 수 없는 그룹에 선택이 남아 있어도, 그게 저장된 잔재라면 조용히 버린다.
+    const droppable = picked.length === 0 || !isExplicit(group.publicId);
+
     if (!group.enabled) {
-      if (picked.length === 0) return { price: 0 };
+      if (droppable) return { price: 0 };
       throw optionsException("MENU_OPTION_GROUP_DISABLED", {
         optionId: group.publicId,
       });
     }
 
     if (!isTriggerSatisfied(group.trigger, acceptedChoiceIdsOf)) {
-      if (picked.length === 0) return { price: 0 };
+      if (droppable) return { price: 0 };
       throw optionsException("MENU_OPTION_TRIGGER_UNSATISFIED", {
         optionId: group.publicId,
       });
     }
 
-    // 조건부 노출 그룹이 화면에 뜨지도 않았는데 필수라고 막으면 주문 자체가 불가능해진다.
-    // 그래서 required는 트리거가 충족된 그룹에만 적용한다.
     if (picked.length === 0) {
       if (!group.required) return { price: 0 };
       throw optionsException("MENU_OPTIONS_REQUIRED", {
@@ -220,8 +221,6 @@ export function getValidatedMenuOptionsSnapshot(
     return validateGroupSelection(group, picked);
   }
 
-  // 스냅샷은 표시 순서로 담는다 — 장바구니 지문이 구조적으로 정규화되려면
-  // 평가 순서가 아니라 메뉴의 순서를 따라야 한다.
   const options: OptionSnapshotGroup[] = [];
   let optionsPrice = 0;
 
@@ -232,7 +231,7 @@ export function getValidatedMenuOptionsSnapshot(
     selectionByOptionId.delete(group.publicId);
   });
 
-  const [unknownOptionId] = selectionByOptionId.keys();
+  const [unknownOptionId] = [...selectionByOptionId.keys()].filter(isExplicit);
   if (unknownOptionId !== undefined) {
     throw optionsException("MENU_OPTIONS_INVALID", { unknownOptionId });
   }

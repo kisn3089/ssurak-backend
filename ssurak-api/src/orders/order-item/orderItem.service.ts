@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { OrderStatus, Prisma, PublicOrderItem } from "@ssurak/db";
 import { PrismaService } from "src/prisma/prisma.service";
 import {
+  explicitOptionIdsOf,
   extractSelectionsFromSnapshot,
   getValidatedMenuOptionsSnapshot,
   mergeSelections,
@@ -207,7 +208,8 @@ export class OrderItemService {
 
     const { optionsPrice, optionsSnapshot } = getValidatedMenuOptionsSnapshot(
       menu,
-      mergeSelections(existingSelections, options)
+      mergeSelections(existingSelections, options),
+      { explicitOptionIds: explicitOptionIdsOf(options) }
     );
 
     const updatedOrderItem = await this.prismaService.orderItem.update({
@@ -220,7 +222,7 @@ export class OrderItemService {
         unitPrice: menu.price + optionsPrice,
         optionsPrice,
         quantity,
-        optionsSnapshot,
+        optionsSnapshot: optionsSnapshot ?? Prisma.DbNull,
       },
       omit: this.omitPrivate,
     });

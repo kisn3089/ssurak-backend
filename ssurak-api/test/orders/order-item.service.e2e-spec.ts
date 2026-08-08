@@ -88,6 +88,11 @@ describe("OrderItemService (통합)", () => {
     };
   };
 
+  const groupIdOf = (
+    menu: SeededStoreDomain["menuWithOptions"],
+    name: string
+  ) => menu.options.find((group) => group.name === name)!.publicId;
+
   const firstItemOf = async (order: Order) =>
     await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.id } });
 
@@ -112,6 +117,87 @@ describe("OrderItemService (통합)", () => {
       });
       expect(updated.optionsPrice).toBe(500);
       expect(updated.unitPrice).toBe(3500);
+    });
+
+    /**
+     * Prisma의 update는 undefined를 "변경 없음"으로 읽는다. 스냅샷을 그대로 넘기면
+     * 옵션이 사라진 결과가 저장되지 않고 이전 메뉴의 옵션이 화면에 계속 남는다.
+     */
+    it("옵션 없는 메뉴로 바꾸면 기존 스냅샷이 지워진다", async () => {
+      const order = await createOrderWithItem();
+      const item = await firstItemOf(order);
+
+      const { orderItem: updated } =
+        await orderItemService.partialUpdateOrderItem(
+          item.publicId,
+          domain.owner.id,
+          { menuPublicId: domain.simpleMenu.publicId }
+        );
+
+      expect(updated.optionsSnapshot).toBeNull();
+      expect(updated.optionsPrice).toBe(0);
+      expect(updated.unitPrice).toBe(1000);
+    });
+
+    it("선택을 빈 배열로 보내 그룹을 비우면 스냅샷이 지워진다", async () => {
+      const order = await createOrderWithItem();
+      const menu = domain.menuWithAdvancedOptions;
+      // 필수 그룹이 없는 메뉴여야 옵션을 전부 비울 수 있다.
+      const created = await orderItemService.createOrderItem(
+        order.publicId,
+        domain.owner.id,
+        {
+          menuPublicId: menu.publicId,
+          quantity: 1,
+          options: [selectOption(menu, "토핑", "초코칩")],
+        }
+      );
+      expect(created.optionsPrice).toBe(300);
+
+      const { orderItem: updated } =
+        await orderItemService.partialUpdateOrderItem(
+          created.publicId,
+          domain.owner.id,
+          { options: [{ optionId: groupIdOf(menu, "토핑"), choices: [] }] }
+        );
+
+      expect(updated.optionsSnapshot).toBeNull();
+      expect(updated.optionsPrice).toBe(0);
+    });
+
+    /**
+     * 조건이 되는 그룹을 바꾸는 한 번의 요청으로 끝나야 한다. 저장된 선택까지 400으로
+     * 막으면 점주가 조건부 그룹을 먼저 비우는 요청을 따로 보내야 한다.
+     */
+    it("조건이 깨진 그룹의 저장된 선택은 조용히 빠진다", async () => {
+      const order = await createOrderWithItem();
+      const menu = domain.menuWithAdvancedOptions;
+      const created = await orderItemService.createOrderItem(
+        order.publicId,
+        domain.owner.id,
+        {
+          menuPublicId: menu.publicId,
+          quantity: 1,
+          options: [
+            selectOption(menu, "토핑", "그래놀라"),
+            selectOption(menu, "소스", "초코 소스"),
+          ],
+        }
+      );
+      expect(created.optionsPrice).toBe(200);
+
+      // 그래놀라를 빼면 "소스"의 노출 조건이 깨진다. 소스는 페이로드에 없지만 병합으로 딸려온다.
+      const { orderItem: updated } =
+        await orderItemService.partialUpdateOrderItem(
+          created.publicId,
+          domain.owner.id,
+          { options: [selectOption(menu, "토핑", "초코칩")] }
+        );
+
+      expect(
+        updated.optionsSnapshot?.options.map((group) => group.name)
+      ).toEqual(["토핑"]);
+      expect(updated.optionsPrice).toBe(300);
     });
 
     it("quantity만 변경하면 옵션 검증 없이 갱신된다", async () => {
