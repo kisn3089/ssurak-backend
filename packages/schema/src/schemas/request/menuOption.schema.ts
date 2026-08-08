@@ -54,7 +54,7 @@ const choiceNameSchema = z
 const choiceBodySchema = z
   .object({
     name: choiceNameSchema,
-    priceDelta: z.number().int("옵션 금액은 정수여야 합니다.").default(0),
+    priceDelta: commonSchema.priceDelta.default(0),
     quantityEnabled: z.boolean().default(false),
     maxQuantity: z.number().int().min(1).max(99).default(1),
     isDefault: z.boolean().default(false),
@@ -142,7 +142,7 @@ export type CreateOptionChoicePayload = z.infer<
 export const updateOptionChoicePayloadSchema = z
   .object({
     name: choiceNameSchema.optional(),
-    priceDelta: z.number().int("옵션 금액은 정수여야 합니다.").optional(),
+    priceDelta: commonSchema.priceDelta.optional(),
     quantityEnabled: z.boolean().optional(),
     maxQuantity: z.number().int().min(1).max(99).optional(),
     isDefault: z.boolean().optional(),
