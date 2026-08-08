@@ -163,6 +163,46 @@ describe("MenuOptionService (통합)", () => {
 
       await cleanupStoreDomain(prisma, other);
     });
+
+    /**
+     * 숨김 선택지는 고객 화면에 나오지 않아 minSelect를 채울 수 없다.
+     * 스키마는 배열 길이만 보므로(2개 ≥ minSelect 2) 여기서 한 번 더 본다.
+     */
+    it("숨김 선택지를 빼면 최소 선택 개수를 못 채우는 옵션은 만들 수 없다", async () => {
+      await expectHttpExceptionAsync(
+        () =>
+          service.createOption(domain.owner, storeId(), menuId, {
+            ...singleGroup("토핑", ["초코", "딸기"], {
+              selectionType: OptionSelectionType.MULTIPLE,
+              required: true,
+              minSelect: 2,
+              maxSelect: 2,
+            }),
+            choices: [
+              {
+                name: "초코",
+                priceDelta: 0,
+                quantityEnabled: false,
+                maxQuantity: 1,
+                isDefault: false,
+                state: OptionChoiceState.AVAILABLE,
+              },
+              {
+                name: "딸기",
+                priceDelta: 0,
+                quantityEnabled: false,
+                maxQuantity: 1,
+                isDefault: false,
+                state: OptionChoiceState.HIDDEN,
+              },
+            ],
+          }),
+        {
+          code: "MENU_OPTION_CONSTRAINT_VIOLATION",
+          status: HttpStatus.BAD_REQUEST,
+        }
+      );
+    });
   });
 
   describe("옵션 수정", () => {
@@ -203,6 +243,29 @@ describe("MenuOptionService (통합)", () => {
         () =>
           service.updateOption(domain.owner, storeId(), option.publicId, {
             required: true,
+          }),
+        {
+          code: "MENU_OPTION_CONSTRAINT_VIOLATION",
+          status: HttpStatus.BAD_REQUEST,
+        }
+      );
+    });
+
+    it("최소 선택 개수는 숨김을 뺀 선택지 수로 검사한다", async () => {
+      const option = await createOption("토핑", ["초코", "딸기"]);
+      await prisma.menuOptionChoice.updateMany({
+        where: { publicId: option.choices[1].publicId },
+        data: { state: OptionChoiceState.HIDDEN },
+      });
+
+      // 선택지는 2개지만 고객이 고를 수 있는 건 1개뿐이다.
+      await expectHttpExceptionAsync(
+        () =>
+          service.updateOption(domain.owner, storeId(), option.publicId, {
+            selectionType: OptionSelectionType.MULTIPLE,
+            required: true,
+            minSelect: 2,
+            maxSelect: 2,
           }),
         {
           code: "MENU_OPTION_CONSTRAINT_VIOLATION",
@@ -382,6 +445,57 @@ describe("MenuOptionService (통합)", () => {
       );
       expect(triggered?.trigger).toEqual([
         { optionId: bean.publicId, choiceIds: [bean.choices[1].publicId] },
+      ]);
+    });
+
+    /**
+     * 규칙이 걸고 있던 선택지가 전부 사라지면 그 규칙은 영영 만족될 수 없다.
+     * 만족 불가능한 규칙을 남기면 그 그룹이 조용히 사라지므로 규칙째 걷어낸다.
+     */
+    it("규칙이 걸고 있던 선택지가 모두 사라지면 그 규칙을 버린다", async () => {
+      const bean = await createOption("원두", ["케냐", "콜롬비아"]);
+      const caffeine = await createOption("카페인", ["연하게", "진하게"]);
+      await service.updateOption(domain.owner, storeId(), caffeine.publicId, {
+        trigger: [
+          { optionId: bean.publicId, choiceIds: [bean.choices[0].publicId] },
+        ],
+      });
+
+      await choiceService.deleteChoice(
+        domain.owner,
+        storeId(),
+        bean.choices[0].publicId
+      );
+
+      const triggered = (await optionsOfMenu()).find(
+        (option) => option.publicId === caffeine.publicId
+      );
+      // 규칙이 하나뿐이었으므로 조건 자체가 없어진다 = 항상 노출.
+      expect(triggered?.trigger).toBeNull();
+    });
+
+    it("다른 규칙이 남아 있으면 조건은 유지된다", async () => {
+      const bean = await createOption("원두", ["케냐", "콜롬비아"]);
+      const kind = await createOption("종류", ["아이스", "핫"]);
+      const caffeine = await createOption("카페인", ["연하게", "진하게"]);
+      await service.updateOption(domain.owner, storeId(), caffeine.publicId, {
+        trigger: [
+          { optionId: bean.publicId, choiceIds: [bean.choices[0].publicId] },
+          { optionId: kind.publicId, choiceIds: [kind.choices[0].publicId] },
+        ],
+      });
+
+      await choiceService.deleteChoice(
+        domain.owner,
+        storeId(),
+        bean.choices[0].publicId
+      );
+
+      const triggered = (await optionsOfMenu()).find(
+        (option) => option.publicId === caffeine.publicId
+      );
+      expect(triggered?.trigger).toEqual([
+        { optionId: kind.publicId, choiceIds: [kind.choices[0].publicId] },
       ]);
     });
   });

@@ -24,6 +24,7 @@ import {
 import {
   assertDefaultCountWithin,
   constraintViolation,
+  countSelectableChoices,
   pruneTriggersReferencing,
   whereChoiceInStore,
   whereOptionInStore,
@@ -115,15 +116,20 @@ export class MenuOptionChoiceService {
         where: whereChoiceInStore(client, storeId, choiceId),
         select: {
           id: true,
+          publicId: true,
           isDefault: true,
           state: true,
           quantityEnabled: true,
           maxQuantity: true,
           option: {
             select: {
+              id: true,
               selectionType: true,
+              minSelect: true,
               maxSelect: true,
-              choices: { select: { publicId: true, isDefault: true } },
+              choices: {
+                select: { publicId: true, isDefault: true, state: true },
+              },
             },
           },
         },
@@ -144,6 +150,26 @@ export class MenuOptionChoiceService {
         throw constraintViolation(
           "판매 중이 아닌 선택지는 기본 선택으로 지정할 수 없습니다."
         );
+      }
+
+      if (state !== current.state) {
+        const selectable =
+          countSelectableChoices(
+            current.option.choices.filter(
+              (choice) => choice.publicId !== current.publicId
+            )
+          ) + (state === OptionChoiceState.HIDDEN ? 0 : 1);
+
+        if (selectable < current.option.minSelect) {
+          await tx.menuOptionGroup.update({
+            where: { id: current.option.id },
+            data: {
+              minSelect: selectable,
+              // required와 minSelect는 같은 사실의 두 표현이다. 0으로 내려가면 필수도 풀린다.
+              ...(selectable === 0 && { required: false }),
+            },
+          });
+        }
       }
 
       if (isDefault && !current.isDefault) {
@@ -174,28 +200,37 @@ export class MenuOptionChoiceService {
           publicId: true,
           option: {
             select: {
+              id: true,
               publicId: true,
               menuId: true,
               minSelect: true,
-              _count: { select: { choices: true } },
+              choices: { select: { publicId: true, state: true } },
             },
           },
         },
       });
 
       // 선택지가 없는 그룹은 고를 수 있는 게 없어 무의미하다. 그룹째 지우게 유도한다.
-      if (current.option._count.choices <= 1) {
+      if (current.option.choices.length <= 1) {
         throw new HttpException(
           exceptionContentsIs("MENU_OPTION_LAST_CHOICE"),
           HttpStatus.CONFLICT
         );
       }
 
-      // 남는 선택지가 최소 선택 개수보다 적으면 그 그룹은 영영 만족될 수 없다.
-      if (current.option._count.choices - 1 < current.option.minSelect) {
-        throw constraintViolation(
-          "최소 선택 개수보다 선택지가 적어집니다. 옵션 설정을 먼저 조정해 주세요."
-        );
+      const remaining = countSelectableChoices(
+        current.option.choices.filter(
+          (choice) => choice.publicId !== current.publicId
+        )
+      );
+      if (remaining < current.option.minSelect) {
+        await tx.menuOptionGroup.update({
+          where: { id: current.option.id },
+          data: {
+            minSelect: remaining,
+            ...(remaining === 0 && { required: false }),
+          },
+        });
       }
 
       await tx.menuOptionChoice.delete({ where: { id: current.id } });

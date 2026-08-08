@@ -25,17 +25,6 @@ export const OPTION_GROUP_VIEW = {
 
 export const OPTION_CHOICE_VIEW = { omit: OMIT_OPTION_CHOICE_PRIVATE } as const;
 
-/**
- * 점주 콘솔용. 필터가 없다 — 숨김 선택지와 비활성 그룹까지 보여야 편집할 수 있고,
- * 안 보여주면 응답을 그대로 되돌려 보내는 순간 그 항목들이 조용히 삭제된다.
- */
-export const MENU_OPTIONS_INCLUDE_OWNER = {
-  options: {
-    orderBy: OPTION_ORDER_BY,
-    ...OPTION_GROUP_VIEW,
-  },
-} as const;
-
 /** 고객 메뉴판용. 비활성 그룹과 HIDDEN 선택지를 거른다. */
 export const MENU_OPTIONS_INCLUDE_CUSTOMER = {
   options: {

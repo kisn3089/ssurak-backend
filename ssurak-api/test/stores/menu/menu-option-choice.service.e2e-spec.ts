@@ -226,7 +226,8 @@ describe("MenuOptionChoiceService (통합)", () => {
       );
     });
 
-    it("최소 선택 개수보다 적어지는 삭제는 거절한다", async () => {
+    /** 숨김 처리와 같은 규칙 — 막지 않고 남는 개수에 맞춰 최소 선택 개수를 내린다. */
+    it("삭제로 선택지가 줄면 최소 선택 개수를 함께 내린다", async () => {
       const option = await createOption("토핑", ["초코", "딸기"], {
         selectionType: OptionSelectionType.MULTIPLE,
         required: true,
@@ -234,18 +235,213 @@ describe("MenuOptionChoiceService (통합)", () => {
         maxSelect: 2,
       });
 
-      await expectHttpExceptionAsync(
-        () =>
-          service.deleteChoice(
-            domain.owner,
-            storeId(),
-            option.choices[0].publicId
-          ),
-        {
-          code: "MENU_OPTION_CONSTRAINT_VIOLATION",
-          status: HttpStatus.BAD_REQUEST,
-        }
+      await service.deleteChoice(
+        domain.owner,
+        storeId(),
+        option.choices[0].publicId
       );
+
+      const updated = await optionService.getOption(
+        domain.owner,
+        storeId(),
+        option.publicId
+      );
+      expect(updated.minSelect).toBe(1);
+      expect(updated.required).toBe(true);
+    });
+
+    /**
+     * 숨김 선택지는 고객 화면에 아예 나오지 않아 minSelect를 채울 수 없다.
+     * 전체 개수로 세면 "선택지는 2개인데 고를 수 있는 건 1개"인 옵션이 남는다.
+     */
+    it("숨김 선택지는 삭제 후 남는 개수에 포함하지 않는다", async () => {
+      const option = await createOption("토핑", ["초코", "딸기", "바닐라"], {
+        selectionType: OptionSelectionType.MULTIPLE,
+        required: true,
+        minSelect: 2,
+        maxSelect: 3,
+      });
+      await service.updateChoice(
+        domain.owner,
+        storeId(),
+        option.choices[2].publicId,
+        { state: OptionChoiceState.HIDDEN }
+      );
+
+      await service.deleteChoice(
+        domain.owner,
+        storeId(),
+        option.choices[0].publicId
+      );
+
+      // 남은 건 딸기(노출) + 바닐라(숨김) → 고를 수 있는 건 1개뿐이다.
+      const updated = await optionService.getOption(
+        domain.owner,
+        storeId(),
+        option.publicId
+      );
+      expect(updated.minSelect).toBe(1);
+    });
+
+    it("삭제로 고를 수 있는 선택지가 없어지면 필수도 함께 풀린다", async () => {
+      const option = await createOption("토핑", ["초코", "바닐라"], {
+        selectionType: OptionSelectionType.MULTIPLE,
+        required: true,
+        minSelect: 1,
+        maxSelect: 2,
+      });
+      await service.updateChoice(
+        domain.owner,
+        storeId(),
+        option.choices[1].publicId,
+        { state: OptionChoiceState.HIDDEN }
+      );
+
+      // 노출되는 마지막 선택지를 지운다(행은 숨김 하나가 남으므로 LAST_CHOICE는 아니다).
+      await service.deleteChoice(
+        domain.owner,
+        storeId(),
+        option.choices[0].publicId
+      );
+
+      const updated = await optionService.getOption(
+        domain.owner,
+        storeId(),
+        option.publicId
+      );
+      expect(updated.minSelect).toBe(0);
+      expect(updated.required).toBe(false);
+    });
+
+    it("숨김 선택지를 지우는 것은 고를 수 있는 개수를 줄이지 않아 통과한다", async () => {
+      const option = await createOption("토핑", ["초코", "딸기", "바닐라"], {
+        selectionType: OptionSelectionType.MULTIPLE,
+        required: true,
+        minSelect: 2,
+        maxSelect: 3,
+      });
+      await service.updateChoice(
+        domain.owner,
+        storeId(),
+        option.choices[2].publicId,
+        { state: OptionChoiceState.HIDDEN }
+      );
+
+      await service.deleteChoice(
+        domain.owner,
+        storeId(),
+        option.choices[2].publicId
+      );
+
+      const remaining = await service.getChoiceList(
+        domain.owner,
+        storeId(),
+        option.publicId
+      );
+      expect(remaining.map((choice) => choice.name)).toEqual(["초코", "딸기"]);
+    });
+
+    /**
+     * 숨김은 되돌릴 수 있는 조작이라 막지 않는다. 대신 남는 선택지로 채울 수 있는
+     * 최대값까지 최소 선택 개수를 함께 내려 "영영 만족 못 하는 옵션"이 생기지 않게 한다.
+     */
+    it("숨김으로 돌리면 최소 선택 개수를 채울 수 있는 최대값으로 내린다", async () => {
+      const option = await createOption("토핑", ["초코", "딸기"], {
+        selectionType: OptionSelectionType.MULTIPLE,
+        required: true,
+        minSelect: 2,
+        maxSelect: 2,
+      });
+
+      await service.updateChoice(
+        domain.owner,
+        storeId(),
+        option.choices[0].publicId,
+        { state: OptionChoiceState.HIDDEN }
+      );
+
+      const updated = await optionService.getOption(
+        domain.owner,
+        storeId(),
+        option.publicId
+      );
+      expect(updated.minSelect).toBe(1);
+      // 아직 하나는 고를 수 있으니 필수는 그대로 남는다.
+      expect(updated.required).toBe(true);
+      expect(updated.maxSelect).toBe(2);
+    });
+
+    it("고를 수 있는 선택지가 하나도 남지 않으면 필수도 함께 풀린다", async () => {
+      const option = await createOption("토핑", ["초코", "딸기"], {
+        selectionType: OptionSelectionType.MULTIPLE,
+        required: true,
+        minSelect: 1,
+        maxSelect: 2,
+      });
+      await service.updateChoice(
+        domain.owner,
+        storeId(),
+        option.choices[0].publicId,
+        { state: OptionChoiceState.HIDDEN }
+      );
+
+      await service.updateChoice(
+        domain.owner,
+        storeId(),
+        option.choices[1].publicId,
+        { state: OptionChoiceState.HIDDEN }
+      );
+
+      const updated = await optionService.getOption(
+        domain.owner,
+        storeId(),
+        option.publicId
+      );
+      expect(updated.minSelect).toBe(0);
+      expect(updated.required).toBe(false);
+    });
+
+    it("최소 선택 개수를 이미 채울 수 있으면 옵션 설정을 건드리지 않는다", async () => {
+      const option = await createOption("토핑", ["초코", "딸기", "바닐라"], {
+        selectionType: OptionSelectionType.MULTIPLE,
+        required: true,
+        minSelect: 1,
+        maxSelect: 3,
+      });
+
+      await service.updateChoice(
+        domain.owner,
+        storeId(),
+        option.choices[0].publicId,
+        { state: OptionChoiceState.HIDDEN }
+      );
+
+      const updated = await optionService.getOption(
+        domain.owner,
+        storeId(),
+        option.publicId
+      );
+      expect(updated.minSelect).toBe(1);
+      expect(updated.required).toBe(true);
+    });
+
+    /** 품절은 일시적인 재고 상태라 설정 검사에서 빼지 않는다. 막으면 운영이 불가능해진다. */
+    it("품절 처리는 최소 선택 개수와 무관하게 통과한다", async () => {
+      const option = await createOption("토핑", ["초코", "딸기"], {
+        selectionType: OptionSelectionType.MULTIPLE,
+        required: true,
+        minSelect: 2,
+        maxSelect: 2,
+      });
+
+      const updated = await service.updateChoice(
+        domain.owner,
+        storeId(),
+        option.choices[0].publicId,
+        { state: OptionChoiceState.SOLD_OUT }
+      );
+
+      expect(updated.state).toBe(OptionChoiceState.SOLD_OUT);
     });
   });
 

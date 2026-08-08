@@ -31,6 +31,7 @@ import { assertNoTriggerCycle } from "./menu-option-trigger";
 import {
   assertDefaultCountWithin,
   constraintViolation,
+  countSelectableChoices,
   GroupConstraints,
   pruneTriggersReferencing,
   whereMenuInStore,
@@ -79,6 +80,8 @@ export class MenuOptionService {
   ): Promise<PublicMenuOptionGroup> {
     const { choices, trigger, ...group } = payload;
 
+    this.assertGroupConstraints(group, countSelectableChoices(choices));
+
     return await this.prismaService.$transaction(async (tx) => {
       const menu = await tx.menu.findFirstOrThrow({
         where: whereMenuInStore(client, storeId, menuId),
@@ -123,7 +126,6 @@ export class MenuOptionService {
           required: true,
           minSelect: true,
           maxSelect: true,
-          _count: { select: { choices: true } },
           choices: { select: { isDefault: true, state: true } },
         },
       });
@@ -135,7 +137,10 @@ export class MenuOptionService {
         minSelect: rest.minSelect ?? current.minSelect,
         maxSelect: rest.maxSelect ?? current.maxSelect,
       };
-      this.assertGroupConstraints(merged, current._count.choices);
+      this.assertGroupConstraints(
+        merged,
+        countSelectableChoices(current.choices)
+      );
 
       // maxSelect를 줄이면 이미 지정된 기본 선택이 한도를 넘길 수 있다.
       const defaultCount = current.choices.filter(
@@ -286,7 +291,7 @@ export class MenuOptionService {
 
   private assertGroupConstraints(
     { selectionType, required, minSelect, maxSelect }: GroupConstraints,
-    choiceCount: number
+    selectableChoiceCount: number
   ): void {
     if (minSelect > maxSelect) {
       throw constraintViolation(
@@ -303,9 +308,9 @@ export class MenuOptionService {
         "필수 여부와 최소 선택 개수가 서로 맞지 않습니다."
       );
     }
-    if (minSelect > choiceCount) {
+    if (minSelect > selectableChoiceCount) {
       throw constraintViolation(
-        "최소 선택 개수가 선택지 수보다 많을 수 없습니다."
+        "최소 선택 개수가 고객이 고를 수 있는 선택지 수보다 많을 수 없습니다."
       );
     }
   }

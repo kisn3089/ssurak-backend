@@ -1,5 +1,10 @@
 import { HttpException, HttpStatus } from "@nestjs/common";
-import { OptionSelectionType, Owner, Prisma } from "@ssurak/db";
+import {
+  OptionChoiceState,
+  OptionSelectionType,
+  Owner,
+  Prisma,
+} from "@ssurak/db";
 import { exceptionContentsIs } from "src/common/constants/exceptionContents";
 import { Tx } from "src/utils/helper/transactionPipe";
 
@@ -66,6 +71,13 @@ export function constraintViolation(reason: string): HttpException {
     },
     HttpStatus.BAD_REQUEST
   );
+}
+
+export function countSelectableChoices(
+  choices: { state: OptionChoiceState }[]
+): number {
+  return choices.filter((choice) => choice.state !== OptionChoiceState.HIDDEN)
+    .length;
 }
 
 export function assertDefaultCountWithin(
