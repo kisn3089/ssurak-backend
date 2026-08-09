@@ -1,3 +1,6 @@
+import { BadRequestException } from "@nestjs/common";
+import convert from "heic-convert";
+
 /**
  * ISO BMFF(HEIF) 컨테이너 중 HEVC로 코딩된 HEIC인지 매직바이트로 판별한다.
  * MIME 라벨은 클라이언트가 붙이는 값이라 못 믿으므로 내용으로 본다.
@@ -22,4 +25,16 @@ export function isHeic(buffer: Buffer): boolean {
     if (HEVC_BRANDS.has(buffer.toString("ascii", i, i + 4))) return true;
   }
   return false;
+}
+
+export async function heicToJpeg(buffer: Buffer): Promise<Buffer> {
+  try {
+    return Buffer.from(
+      await convert({ buffer, format: "JPEG", quality: 0.92 })
+    );
+  } catch {
+    throw new BadRequestException(
+      "HEIC 이미지를 변환하지 못했습니다. 다시 시도하거나 다른 확장자로 올려주세요."
+    );
+  }
 }

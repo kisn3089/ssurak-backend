@@ -11,10 +11,9 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import sharp from "sharp";
-import convert from "heic-convert";
 import { createId } from "@paralleldrive/cuid2";
 import { S3_CLIENT } from "./s3.provider";
-import { isHeic } from "./heic";
+import { heicToJpeg, isHeic } from "./heic";
 import {
   MENU_VARIANTS,
   MENU_VARIANT_NAMES,
@@ -30,7 +29,7 @@ import {
 } from "./image-key";
 
 /**
- * 디코딩 폭탄 방어선. MAX_FILE_SIZE(5MB)는 파일 크기만 제한하므로
+ * 디코딩 사이즈 방어선. MAX_FILE_SIZE(5MB)는 파일 크기만 제한하므로
  * 고압축 PNG 한 장이 디코딩 시 수 GB를 먹는 걸 막지 못한다.
  * 메모리를 결정하는 건 파일 크기가 아니라 픽셀 수다.
  */
@@ -43,7 +42,6 @@ export interface VariantInfo {
 }
 
 export interface SavedImage {
-  /** 임시 prefix. 메뉴 저장 시 그대로 돌려받아 정식 경로로 확정한다. */
   imageKey: string;
   variants: Record<MenuVariant, VariantInfo>;
 }
@@ -67,7 +65,7 @@ export class StorageService {
 
   async saveImage(buffer: Buffer, ownerPublicId: string): Promise<SavedImage> {
     // 아이폰 HEIC(HEVC)는 sharp가 못 읽으므로 JPEG로 옮긴 뒤 파이프라인에 태운다.
-    const source = isHeic(buffer) ? await this.heicToJpeg(buffer) : buffer;
+    const source = isHeic(buffer) ? await heicToJpeg(buffer) : buffer;
 
     await this.assertUsableSource(source);
 
@@ -119,22 +117,6 @@ export class StorageService {
     const variants: Record<MenuVariant, VariantInfo> = { hero, thumbnail };
 
     return { imageKey: prefix, variants };
-  }
-
-  /**
-   * HEIC(HEVC)를 JPEG 버퍼로 변환한다.
-   * 손상·비정상 HEIC는 여기서 400으로 돌려준다(안 잡으면 평범한 Error → 500).
-   */
-  private async heicToJpeg(buffer: Buffer): Promise<Buffer> {
-    try {
-      return Buffer.from(
-        await convert({ buffer, format: "JPEG", quality: 0.92 })
-      );
-    } catch {
-      throw new BadRequestException(
-        "HEIC 이미지를 변환하지 못했습니다. 다시 시도하거나 다른 확장자로 올려주세요."
-      );
-    }
   }
 
   /**
