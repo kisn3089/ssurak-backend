@@ -3,15 +3,13 @@
 // 생성기가 요구하는 declaration merging 패턴이라 namespace 사용이 불가피하다.
 /* eslint-disable @typescript-eslint/no-namespace */
 import type {
-  MenuCustomOption as _MenuCustomOption,
-  MenuRequiredOption as _MenuRequiredOption,
+  MenuOptionTrigger as _MenuOptionTrigger,
   OrderItemOptionSnapshot as _OrderItemOptionSnapshot,
 } from "./menuOptions.type";
 
 declare global {
   namespace PrismaJson {
-    type MenuRequiredOption = _MenuRequiredOption;
-    type MenuCustomOption = _MenuCustomOption;
+    type MenuOptionTrigger = _MenuOptionTrigger;
     type OrderItemOptionSnapshot = _OrderItemOptionSnapshot;
   }
 }

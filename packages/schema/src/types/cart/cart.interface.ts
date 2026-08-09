@@ -1,3 +1,4 @@
+import type { OptionSnapshotGroup } from "../menu/menuOptions.interface";
 import type { OrderItem } from "../orderItem/orderItem.interface";
 import type { SyncNotice } from "../realtime/syncNotice.interface";
 
@@ -5,8 +6,7 @@ import type { SyncNotice } from "../realtime/syncNotice.interface";
  * 장바구니 항목 응답.
  *
  * 장바구니는 DB가 아닌 Redis에 세션 단위로 보관되므로 대응하는 테이블이 없다.
- * 주문 항목과 가격·수량 필드를 공유하되, 아직 주문 전이라 `publicId`·`createdAt`이 없고
- * 옵션은 스냅샷 대신 선택한 key만 담는다.
+ * 주문 항목과 가격·수량 필드를 공유하되, 아직 주문 전이라 `publicId`·`createdAt`이 없다.
  *
  * 여기의 `id`는 DB의 내부 id가 아니라 Redis가 발급한 장바구니 항목 식별자다.
  */
@@ -16,8 +16,11 @@ export type CartItem = Omit<
 > & {
   id: string;
   menuPublicId: string;
-  requiredOptions?: Record<string, string>;
-  customOptions?: Record<string, string>;
+  /**
+   * 선택 id만이 아니라 확정 스냅샷을 그대로 들고 있는다.
+   * 장바구니 UI가 메뉴를 다시 조회하지 않고 렌더할 수 있다.
+   */
+  options?: OptionSnapshotGroup[];
   addedAt: string;
   /** 옵션 조합 식별 지문. 동일 옵션 항목을 합산하는 기준이 된다. */
   fingerprint: string;

@@ -109,18 +109,62 @@ const EXCEPTION_CONTENTS = {
     message:
       "주문 상태를 이전 단계로 되돌리거나 같은 상태로 변경할 수 없습니다.",
   },
-  /** ---Order Item--- */
+  /** ---Menu Option--- */
   MENU_OPTIONS_INVALID: {
     code: "MENU_OPTIONS_INVALID",
     message: "잘못된 옵션 값입니다.",
   },
   MENU_OPTIONS_REQUIRED: {
     code: "MENU_OPTIONS_REQUIRED",
-    message: "해당 메뉴의 필수 옵션 값이 잘못되었습니다.",
+    message: "필수 옵션을 선택해 주세요.",
   },
-  MENU_OPTIONS_SHOULD_BE_EMPTY: {
-    code: "MENU_OPTIONS_SHOULD_BE_EMPTY",
-    message: "해당 메뉴는 선택 옵션 값이 존재할 수 없습니다.",
+  MENU_OPTION_SELECT_COUNT_INVALID: {
+    code: "MENU_OPTION_SELECT_COUNT_INVALID",
+    message: "선택 개수가 올바르지 않습니다.",
+  },
+  MENU_OPTION_CHOICE_SOLD_OUT: {
+    code: "MENU_OPTION_CHOICE_SOLD_OUT",
+    message: "품절된 옵션입니다.",
+  },
+  MENU_OPTION_QUANTITY_INVALID: {
+    code: "MENU_OPTION_QUANTITY_INVALID",
+    message: "옵션 수량이 올바르지 않습니다.",
+  },
+  MENU_OPTION_GROUP_DISABLED: {
+    code: "MENU_OPTION_GROUP_DISABLED",
+    message: "현재 선택할 수 없는 옵션입니다.",
+  },
+  MENU_OPTION_TRIGGER_UNSATISFIED: {
+    code: "MENU_OPTION_TRIGGER_UNSATISFIED",
+    message: "선행 옵션 선택이 필요한 옵션입니다.",
+  },
+  MENU_OPTION_PRICE_UNDERFLOW: {
+    code: "MENU_OPTION_PRICE_UNDERFLOW",
+    message: "할인 옵션 합계가 메뉴 가격을 초과합니다.",
+  },
+  MENU_OPTION_TRIGGER_INVALID: {
+    code: "MENU_OPTION_TRIGGER_INVALID",
+    message: "트리거가 참조하는 옵션이나 선택지를 찾을 수 없습니다.",
+  },
+  MENU_OPTION_TRIGGER_CYCLE: {
+    code: "MENU_OPTION_TRIGGER_CYCLE",
+    message: "옵션이 서로를 조건으로 참조할 수 없습니다.",
+  },
+  MENU_OPTION_CONSTRAINT_VIOLATION: {
+    code: "MENU_OPTION_CONSTRAINT_VIOLATION",
+    message: "옵션 설정이 서로 맞지 않습니다.",
+  },
+  MENU_OPTION_LAST_CHOICE: {
+    code: "MENU_OPTION_LAST_CHOICE",
+    message: "옵션의 마지막 선택지는 삭제할 수 없습니다. 옵션을 삭제해 주세요.",
+  },
+  MENU_OPTION_ORDER_MISMATCH: {
+    code: "MENU_OPTION_ORDER_MISMATCH",
+    message: "옵션 목록이 변경되었습니다. 새로고침 후 다시 시도해 주세요.",
+  },
+  OPTION_CHOICE_ORDER_MISMATCH: {
+    code: "OPTION_CHOICE_ORDER_MISMATCH",
+    message: "선택지 목록이 변경되었습니다. 새로고침 후 다시 시도해 주세요.",
   },
   /** ---Cart--- */
   CART_ITEM_NOT_FOUND: {

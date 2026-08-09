@@ -13,6 +13,9 @@ import { CustomerSessionController } from "./session/customer-session.controller
 import { CategoryService } from "./menu/category.service";
 import { StorageModule } from "src/storage/storage.module";
 import { CategoryController } from "./menu/category.controller";
+import { MenuOptionChoiceService } from "./menu/menu-option-choice.service";
+import { MenuOptionController } from "./menu/menu-option.controller";
+import { MenuOptionService } from "./menu/menu-option.service";
 
 @Module({
   // MenuService가 이미지 확정(promoteMenuImage)에 StorageService를 쓴다.
@@ -23,11 +26,14 @@ import { CategoryController } from "./menu/category.controller";
     TableController,
     SessionController,
     CategoryController,
+    MenuOptionController,
     CustomerSessionController,
   ],
   providers: [
     StoresService,
     MenuService,
+    MenuOptionService,
+    MenuOptionChoiceService,
     CategoryService,
     TableService,
     SessionService,

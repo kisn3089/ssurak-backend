@@ -4,10 +4,46 @@ import {
   createOrderItemsWithValidMenu,
   ValidatableOrderItem,
 } from "src/common/validate/order/create-order-item";
+import { OptionChoiceState, OptionSelectionType } from "@ssurak/db";
 import { MenuValidationFields } from "src/common/validate/menu/mismatch";
 import { expectHttpException } from "test/helpers/expect-http-exception";
 
 const CDN = "https://cdn.example.com";
+
+/** 사이즈: 필수 단일 선택 (톨 0 / 라지 +500) */
+const sizeGroup: MenuValidationFields["options"][number] = {
+  publicId: "optsize",
+  name: "사이즈",
+  selectionType: OptionSelectionType.SINGLE,
+  required: true,
+  minSelect: 1,
+  maxSelect: 1,
+  sortOrder: 10,
+  enabled: true,
+  trigger: null,
+  choices: [
+    {
+      publicId: "chotall",
+      name: "톨",
+      priceDelta: 0,
+      quantityEnabled: false,
+      maxQuantity: 1,
+      isDefault: true,
+      sortOrder: 10,
+      state: OptionChoiceState.AVAILABLE,
+    },
+    {
+      publicId: "cholarge",
+      name: "라지",
+      priceDelta: 500,
+      quantityEnabled: false,
+      maxQuantity: 1,
+      isDefault: false,
+      sortOrder: 20,
+      state: OptionChoiceState.AVAILABLE,
+    },
+  ],
+};
 
 const menuFixture = (
   overrides: Partial<MenuValidationFields> = {}
@@ -17,17 +53,8 @@ const menuFixture = (
   name: "아메리카노",
   price: 3000,
   imageKey: "menu/americano",
-  requiredOptions: {
-    사이즈: {
-      options: [
-        { key: "톨", price: 0 },
-        { key: "라지", price: 500 },
-      ],
-      defaultKey: "톨",
-    },
-  },
-  customOptions: null,
   isAvailable: true,
+  options: [sizeGroup],
   ...overrides,
 });
 
@@ -37,7 +64,12 @@ describe("createOrderItemsWithValidMenu", () => {
       {
         menuPublicId: "menu-americano",
         quantity: 2,
-        requiredOptions: { 사이즈: "라지" },
+        options: [
+          {
+            optionId: "optsize",
+            choices: [{ choiceId: "cholarge", quantity: 1 }],
+          },
+        ],
       },
     ];
 
@@ -58,8 +90,20 @@ describe("createOrderItemsWithValidMenu", () => {
         unitPrice: 3500,
         quantity: 2,
         optionsSnapshot: {
-          requiredOptions: { 사이즈: { key: "라지", price: 500 } },
-          customOptions: {},
+          options: [
+            {
+              optionId: "optsize",
+              name: "사이즈",
+              choices: [
+                {
+                  choiceId: "cholarge",
+                  name: "라지",
+                  priceDelta: 500,
+                  quantity: 1,
+                },
+              ],
+            },
+          ],
         },
       },
     ]);
@@ -71,7 +115,7 @@ describe("createOrderItemsWithValidMenu", () => {
       name: "생수",
       price: 1000,
       imageKey: null,
-      requiredOptions: null,
+      options: [],
     });
 
     const [result] = createOrderItemsWithValidMenu(
@@ -116,7 +160,12 @@ describe("createOrderItemsWithValidMenu", () => {
             {
               menuPublicId: "menu-americano",
               quantity: 1,
-              requiredOptions: { 사이즈: "톨" },
+              options: [
+                {
+                  optionId: "optsize",
+                  choices: [{ choiceId: "chotall", quantity: 1 }],
+                },
+              ],
             },
           ],
           [unavailable],

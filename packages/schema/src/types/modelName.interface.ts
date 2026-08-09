@@ -9,6 +9,8 @@ export type ModelName =
   | "Category"
   | "Table"
   | "Menu"
+  | "MenuOptionGroup"
+  | "MenuOptionChoice"
   | "Order"
   | "OrderItem"
   | "TableSession";

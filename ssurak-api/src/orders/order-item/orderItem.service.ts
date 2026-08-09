@@ -2,8 +2,10 @@ import { Injectable } from "@nestjs/common";
 import { OrderStatus, Prisma, PublicOrderItem } from "@ssurak/db";
 import { PrismaService } from "src/prisma/prisma.service";
 import {
+  explicitOptionIdsOf,
   extractSelectionsFromSnapshot,
   getValidatedMenuOptionsSnapshot,
+  mergeSelections,
 } from "src/common/validate/menu/options";
 import {
   CreateOrderItemPayloadDto,
@@ -32,6 +34,13 @@ type MetaInfoList = {
   orderAutoCancelled: boolean;
 };
 
+/** 주문 항목 수정이 필요로 하는 주문 컨텍스트(세션 검증 + 실시간 구독 대상). */
+const ORDER_CONTEXT_INCLUDE = {
+  tableSession: true,
+  store: { select: { publicId: true } },
+  table: { select: { publicId: true, tableNumber: true } },
+} as const;
+
 @Injectable()
 export class OrderItemService {
   constructor(
@@ -49,8 +58,7 @@ export class OrderItemService {
     ownerId: bigint,
     createPayload: CreateOrderItemPayloadDto
   ): Promise<PublicOrderItem<"Wide">> {
-    const { menuPublicId, requiredOptions, customOptions, quantity } =
-      createPayload;
+    const { menuPublicId, options, quantity } = createPayload;
 
     const order = await this.prismaService.order.findFirstOrThrow({
       where: { publicId: orderId, store: { ownerId } },
@@ -67,10 +75,7 @@ export class OrderItemService {
 
     const { optionsPrice, optionsSnapshot } = getValidatedMenuOptionsSnapshot(
       menu,
-      {
-        requiredOptions,
-        customOptions,
-      }
+      options
     );
 
     return await this.prismaService.orderItem.create({
@@ -87,6 +92,16 @@ export class OrderItemService {
       },
       omit: this.omitPrivate,
     });
+  }
+
+  private subscriberOf(order: {
+    store: { publicId: string };
+    table: { publicId: string };
+  }): OrderSubscriber {
+    return {
+      storePublicId: order.store.publicId,
+      tablePublicId: order.table.publicId,
+    };
   }
 
   private buildMenuQuery(menuId: string | bigint, storeId: string) {
@@ -128,8 +143,7 @@ export class OrderItemService {
     ownerId: bigint,
     updatePayload: UpdateOrderItemPayloadDto
   ): Promise<UpdatedOrderItem<"tableNumber">> {
-    const { menuPublicId, requiredOptions, customOptions, quantity } =
-      updatePayload;
+    const { menuPublicId, options, quantity } = updatePayload;
 
     const whereCondition = {
       publicId: orderItemId,
@@ -137,36 +151,18 @@ export class OrderItemService {
     } as const;
     const updateWhereCondition = { publicId: orderItemId } as const;
 
-    /** 메뉴에 관한 업데이트가 없을 때 */
-    const isNotMenuUpdate = !menuPublicId && !requiredOptions && !customOptions;
-    const includeMenu = isNotMenuUpdate
-      ? {}
-      : { menu: { select: MENU_VALIDATION_FIELDS_SELECT } };
+    /**
+     * 메뉴에 관한 업데이트가 없을 때.
+     * 이 경우 메뉴를 조인하지 않는다 — 옵션이 관계가 된 뒤로 메뉴를 끌어오면
+     * 옵션 그룹·선택지까지 딸려와서, 수량만 고치는 요청에는 순전한 낭비다.
+     */
+    if (!menuPublicId && !options) {
+      const orderItem = await this.prismaService.orderItem.findFirstOrThrow({
+        where: whereCondition,
+        include: { order: { include: ORDER_CONTEXT_INCLUDE } },
+      });
+      const validatedOrder = validateOrderSessionToWrite(orderItem.order);
 
-    const orderItem = await this.prismaService.orderItem.findFirstOrThrow({
-      where: whereCondition,
-      include: {
-        ...includeMenu,
-        order: {
-          include: {
-            tableSession: true,
-            store: { select: { publicId: true } },
-            table: { select: { publicId: true, tableNumber: true } },
-          },
-        },
-      },
-    });
-
-    const validatedOrder = validateOrderSessionToWrite(orderItem.order);
-
-    const subscriber = {
-      storePublicId: validatedOrder.store.publicId,
-      tablePublicId: validatedOrder.table.publicId,
-    };
-
-    const tableNumber = validatedOrder.table.tableNumber;
-
-    if (isNotMenuUpdate) {
       const updatedOrderItem = await this.prismaService.orderItem.update({
         where: updateWhereCondition,
         data: updatePayload,
@@ -175,10 +171,22 @@ export class OrderItemService {
 
       return {
         orderItem: updatedOrderItem,
-        subscriber,
-        meta: { tableNumber },
+        subscriber: this.subscriberOf(validatedOrder),
+        meta: { tableNumber: validatedOrder.table.tableNumber },
       };
     }
+
+    const orderItem = await this.prismaService.orderItem.findFirstOrThrow({
+      where: whereCondition,
+      include: {
+        menu: { select: MENU_VALIDATION_FIELDS_SELECT },
+        order: { include: ORDER_CONTEXT_INCLUDE },
+      },
+    });
+
+    const validatedOrder = validateOrderSessionToWrite(orderItem.order);
+    const subscriber = this.subscriberOf(validatedOrder);
+    const tableNumber = validatedOrder.table.tableNumber;
 
     /** menuPublicId가 있으면 새 메뉴 조회, 없으면 기존 메뉴 사용 */
     const menu = menuPublicId
@@ -196,14 +204,12 @@ export class OrderItemService {
     const existingSelections =
       menu.id === orderItem.menuId
         ? extractSelectionsFromSnapshot(orderItem.optionsSnapshot)
-        : {};
+        : undefined;
 
     const { optionsPrice, optionsSnapshot } = getValidatedMenuOptionsSnapshot(
       menu,
-      {
-        requiredOptions: requiredOptions ?? existingSelections.requiredOptions,
-        customOptions: customOptions ?? existingSelections.customOptions,
-      }
+      mergeSelections(existingSelections, options),
+      { explicitOptionIds: explicitOptionIdsOf(options) }
     );
 
     const updatedOrderItem = await this.prismaService.orderItem.update({
@@ -216,7 +222,7 @@ export class OrderItemService {
         unitPrice: menu.price + optionsPrice,
         optionsPrice,
         quantity,
-        optionsSnapshot,
+        optionsSnapshot: optionsSnapshot ?? Prisma.DbNull,
       },
       omit: this.omitPrivate,
     });

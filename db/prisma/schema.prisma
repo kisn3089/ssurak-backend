@@ -186,28 +186,110 @@ model Menu {
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
   deletedAt       DateTime? @map("deleted_at")
-  // 예시:
-  // { "종류": { "options": [{ "key": "아이스", "description": "시원하게 드셔보세요.", "price": 0 },
-  //                          { "key": "핫", "description": "따뜻하게 드셔보세요.", "price": 0 }],
-  //             "defaultKey": "아이스" } }
-  /// [MenuRequiredOption]
-  requiredOptions Json?     @map("required_options")
-  // 예시:
-  // { "카페인": { "options": [{ "key": "진하게", "description": "카페인을 진하게 즐겨", "price": 1000 },
-  //                            { "key": "연하게", "description": "카페인을 연하게 즐겨", "price": 0 }],
-  //              "trigger": [{ "group": "원두", "in": ["케냐", "코스타리코"] }],
-  //              "defaultKey": "진하게" } }
-  /// [MenuCustomOption]
-  customOptions   Json?     @map("custom_options")
 
   // MVP 기능은 아니기 때문에 일단 보류
   // switchMenu ice_americano 선택 시 상세 페이지에서 변경 가능한 메뉴(예시: 스타벅스) hot_americano 등으로 변경할 수 있도록 menu 선택지 제공
 
-  category   Category    @relation(fields: [categoryId], references: [id])
+  category   Category          @relation(fields: [categoryId], references: [id])
   orderItems OrderItem[]
+  /// 관계 필드명을 `optionGroups`가 아니라 `options`로 둔다 — 조회 결과 모양이 곧 API 응답 모양이라
+  /// 매퍼에서 키를 갈아끼울 일이 없다.
+  options    MenuOptionGroup[]
 
   @@index([categoryId, sortOrder])
   @@map("menu")
+}
+
+/**
+ * 옵션 그룹의 선택 방식
+ */
+enum OptionSelectionType {
+  /**
+   * 그룹에서 하나만 고른다 (maxSelect는 항상 1)
+   */
+  SINGLE
+  /**
+   * 그룹에서 minSelect~maxSelect 개를 고른다
+   */
+  MULTIPLE
+}
+
+/**
+ * 선택지의 판매 상태
+ */
+enum OptionChoiceState {
+  AVAILABLE
+  /**
+   * 목록에는 보이지만 고를 수 없다 (품절 표시)
+   */
+  SOLD_OUT
+  /**
+   * 고객에게 아예 노출되지 않는다. 점주 콘솔에서만 보인다
+   */
+  HIDDEN
+}
+
+/**
+ * 메뉴에 딸린 옵션 그룹(예: "온도", "샷 추가")
+ */
+model MenuOptionGroup {
+  id            BigInt              @id @default(autoincrement())
+  publicId      String              @unique @default(cuid(2)) @map("public_id")
+  menuId        BigInt              @map("menu_id")
+  name          String              @db.VarChar(30)
+  selectionType OptionSelectionType @default(SINGLE) @map("selection_type")
+  required      Boolean             @default(false)
+  minSelect     Int                 @default(0) @map("min_select")
+  maxSelect     Int                 @default(1) @map("max_select")
+  /**
+   * 메뉴 안 옵션 표시 순서 (Sparse 패턴: 10, 20, 30...)
+   * 클라이언트가 직접 보내지 않는다 — 메뉴 저장 시 options 배열 순서에서 파생된다.
+   */
+  sortOrder     Int                 @default(0) @map("sort_order")
+  /// false면 고객 메뉴판에서 그룹 전체가 빠진다 (점주 콘솔에는 남는다)
+  enabled       Boolean             @default(true)
+  /// 조건부 노출 규칙. 규칙 간에는 AND, 한 규칙의 choiceIds 안에서는 OR.
+  /// null이거나 빈 배열이면 항상 노출된다.
+  /// 예시: [{ "optionId": "<원두 그룹 publicId>", "choiceIds": ["<케냐 publicId>"] }]
+  /// 조회 조건으로 쓰이지 않고 로드 후 JS로만 평가하므로 값 객체 컬럼으로 둔다.
+  /// 컬럼명이 trigger_rules인 이유: MySQL에서 TRIGGER가 예약어다.
+  /// [MenuOptionTrigger]
+  trigger       Json?               @map("trigger_rules")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+
+  menu    Menu               @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  choices MenuOptionChoice[]
+
+  @@unique([menuId, name])
+  @@index([menuId, sortOrder])
+  @@map("menu_option_group")
+}
+
+/**
+ * 옵션 그룹 안의 개별 선택지(예: "HOT", "샷 1개 추가")
+ */
+model MenuOptionChoice {
+  id              BigInt            @id @default(autoincrement())
+  publicId        String            @unique @default(cuid(2)) @map("public_id")
+  optionGroupId   BigInt            @map("option_group_id")
+  name            String            @db.VarChar(30)
+  /// 이 선택지가 더하는 금액(개당). quantity와 곱해진다. 할인 옵션을 위해 음수도 허용한다.
+  priceDelta      Int               @default(0) @map("price_delta")
+  quantityEnabled Boolean           @default(false) @map("quantity_enabled")
+  maxQuantity     Int               @default(1) @map("max_quantity")
+  isDefault       Boolean           @default(false) @map("is_default")
+  /// 그룹 안 표시 순서 (Sparse 패턴). choices 배열 순서에서 파생된다.
+  sortOrder       Int               @default(0) @map("sort_order")
+  state           OptionChoiceState @default(AVAILABLE)
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  option MenuOptionGroup @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
+
+  @@unique([optionGroupId, name])
+  @@index([optionGroupId, sortOrder])
+  @@map("menu_option_choice")
 }
 
 enum OrderStatus {

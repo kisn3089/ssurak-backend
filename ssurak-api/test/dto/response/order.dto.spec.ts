@@ -33,8 +33,15 @@ const orderItemRowFixture = () => ({
   unitPrice: 3500,
   quantity: 2,
   optionsSnapshot: {
-    requiredOptions: { 사이즈: { key: "라지", price: 500 } },
-    customOptions: {},
+    options: [
+      {
+        optionId: "optsize",
+        name: "사이즈",
+        choices: [
+          { choiceId: "cholarge", name: "라지", priceDelta: 500, quantity: 1 },
+        ],
+      },
+    ],
   },
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
 });

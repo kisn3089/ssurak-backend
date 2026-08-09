@@ -38,10 +38,10 @@ export class MenuService {
     storeId: string,
     createPayload: CreateMenuPayloadDto
   ): Promise<PublicMenu> {
-    const { categoryId, imageKey, requiredOptions, customOptions, ...rest } =
-      createPayload;
+    const { categoryId, imageKey, ...rest } = createPayload;
     await this.assertCategoryBelongsToStore(client, categoryId, storeId);
 
+    // S3 승격은 트랜잭션 밖에 둔다 — 네트워크 왕복을 트랜잭션 시간 예산에 태우지 않는다.
     const promotedKey = imageKey
       ? await this.storageService.promoteMenuImage(imageKey, client.publicId)
       : null;
@@ -51,17 +51,10 @@ export class MenuService {
         ...rest,
         imageKey: promotedKey,
         sortOrder: await this.nextSortOrder(categoryId),
-        requiredOptions: this.jsonInput(requiredOptions),
-        customOptions: this.jsonInput(customOptions),
         category: { connect: { publicId: categoryId } },
       },
       omit: OMIT_MENU_PRIVATE,
     });
-  }
-
-  /** nullable Json payload를 Prisma 입력으로 정규화한다. */
-  private jsonInput<T>(value: T | null | undefined) {
-    return value === null ? Prisma.DbNull : value;
   }
 
   async getMenuUnique(
@@ -81,8 +74,7 @@ export class MenuService {
     menuId: string,
     updatePayload: UpdateMenuPayloadDto
   ): Promise<PublicMenu> {
-    const { categoryId, imageKey, requiredOptions, customOptions, ...rest } =
-      updatePayload;
+    const { categoryId, imageKey, ...rest } = updatePayload;
 
     const imageUpdate = await this.resolveImageUpdate(
       imageKey,
@@ -100,23 +92,12 @@ export class MenuService {
 
       return await tx.menu.update({
         where: this.whereMenuInStore(client, storeId, menuId),
-        data: {
-          ...rest,
-          ...imageUpdate,
-          ...moveUpdate,
-          requiredOptions: this.jsonInput(requiredOptions),
-          customOptions: this.jsonInput(customOptions),
-        },
+        data: { ...rest, ...imageUpdate, ...moveUpdate },
         omit: OMIT_MENU_PRIVATE,
       });
     });
   }
 
-  /**
-   * 카테고리 이동을 Prisma data 조각으로 바꾼다.
-   * 옮겨온 메뉴는 새 카테고리의 맨 뒤에 놓는다 — 원래 카테고리의 순서를 그대로
-   * 들고 오면 이미 그 자리를 쓰는 메뉴와 겹친다. 세부 위치는 재정렬로 잡는다.
-   */
   private async resolveCategoryMove(
     tx: Tx,
     client: Owner,

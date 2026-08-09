@@ -23,6 +23,8 @@ export const paramsDocs = {
   tableId: { name: "tableId", description: "테이블 고유 ID" },
   menuId: { name: "menuId", description: "메뉴 고유 ID" },
   categoryId: { name: "categoryId", description: "카테고리 고유 ID" },
+  optionId: { name: "optionId", description: "메뉴 옵션 고유 ID" },
+  choiceId: { name: "choiceId", description: "옵션 선택지 고유 ID" },
   orderId: { name: "orderId", description: "주문 고유 ID" },
   orderItemId: { name: "orderItemId", description: "주문 항목 고유 ID" },
   ownerId: { name: "ownerId", description: "매장 소유자 고유 ID" },

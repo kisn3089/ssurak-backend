@@ -6,7 +6,7 @@ import {
   PublicCategoryWithMenus,
 } from "@ssurak/db";
 import {
-  CATEGORIES,
+  CATEGORIES_FOR_OWNER,
   CATEGORY_ORDER_BY,
 } from "src/common/query/session-query.const";
 import { exceptionContentsIs } from "src/common/constants/exceptionContents";
@@ -59,7 +59,7 @@ export class CategoryService {
   ): Promise<PublicCategoryWithMenus[]> {
     return await this.prismaService.category.findMany({
       where: this.whereInStore(client, storeId),
-      ...CATEGORIES,
+      ...CATEGORIES_FOR_OWNER,
       omit: this.OMIT_CATEGORY_PRIVATE,
     });
   }

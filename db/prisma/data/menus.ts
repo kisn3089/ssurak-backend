@@ -1,7 +1,81 @@
-import type {
-  MenuCustomOption,
-  MenuRequiredOption,
-} from "../../types/menuOptions.type";
+import { OptionChoiceState, OptionSelectionType, Prisma } from "@prisma/client";
+import type { MenuOptionTrigger } from "../../types/menuOptions.type";
+
+/** 시드 publicId에 매장 index를 붙인다. 같은 메뉴가 매장마다 따로 존재한다. */
+export const suffixed = (publicId: string, storeIndex: number) =>
+  `${publicId}${storeIndex}`;
+
+/**
+ * trigger가 가리키는 id에도 같은 suffix를 붙인다.
+ *
+ * 빼먹으면 에러 없이 다른 매장의 옵션을 가리키게 되고, 조건이 영영 충족되지 않아
+ * 해당 그룹이 조용히 사라진다. 시드에서 가장 틀리기 쉬운 지점이다.
+ */
+export function suffixTrigger(
+  trigger: MenuOptionTrigger | undefined,
+  storeIndex: number
+): MenuOptionTrigger | typeof Prisma.DbNull {
+  if (!trigger?.length) return Prisma.DbNull;
+
+  return trigger.map((rule) => ({
+    optionId: suffixed(rule.optionId, storeIndex),
+    choiceIds: rule.choiceIds.map((id) => suffixed(id, storeIndex)),
+  }));
+}
+
+/** 옵션 그룹 시드를 Prisma 중첩 create 입력으로. sortOrder는 배열 순서에서 파생한다. */
+export function toOptionGroupSeedInput(
+  options: OptionGroupSeed[] | undefined,
+  storeIndex: number
+): Prisma.MenuOptionGroupCreateWithoutMenuInput[] {
+  return (options ?? []).map((group, groupIndex) => ({
+    publicId: suffixed(group.publicId, storeIndex),
+    name: group.name,
+    selectionType: group.selectionType,
+    required: group.required ?? false,
+    minSelect: group.minSelect ?? 0,
+    maxSelect: group.maxSelect ?? 1,
+    enabled: group.enabled ?? true,
+    sortOrder: (groupIndex + 1) * 10,
+    trigger: suffixTrigger(group.trigger, storeIndex),
+    choices: {
+      create: group.choices.map((choice, choiceIndex) => ({
+        publicId: suffixed(choice.publicId, storeIndex),
+        name: choice.name,
+        priceDelta: choice.priceDelta ?? 0,
+        quantityEnabled: choice.quantityEnabled ?? false,
+        maxQuantity: choice.maxQuantity ?? 1,
+        isDefault: choice.isDefault ?? false,
+        state: choice.state ?? OptionChoiceState.AVAILABLE,
+        sortOrder: (choiceIndex + 1) * 10,
+      })),
+    },
+  }));
+}
+
+export type OptionChoiceSeed = {
+  /** 매장별 index suffix가 seed.ts에서 붙는다. */
+  publicId: string;
+  name: string;
+  priceDelta?: number;
+  quantityEnabled?: boolean;
+  maxQuantity?: number;
+  isDefault?: boolean;
+  state?: OptionChoiceState;
+};
+
+export type OptionGroupSeed = {
+  publicId: string;
+  name: string;
+  selectionType: OptionSelectionType;
+  required?: boolean;
+  minSelect?: number;
+  maxSelect?: number;
+  enabled?: boolean;
+  /** 같은 메뉴 안에서 자기보다 앞에 있는 그룹만 참조한다(런타임 검증과 같은 규칙). */
+  trigger?: MenuOptionTrigger;
+  choices: OptionChoiceSeed[];
+};
 
 export type MenuSeed = {
   publicId: string;
@@ -16,12 +90,36 @@ export type MenuSeed = {
    * 최종 URL은 `${CDN_BASE_URL}/${imageKey}/${variant}.webp`로 조립된다.
    */
   imageKey: string;
-  requiredOptions?: MenuRequiredOption;
-  customOptions?: MenuCustomOption;
+  /** 옵션 sortOrder는 시드에 적지 않는다 — API와 같이 배열 순서에서 파생한다. */
+  options?: OptionGroupSeed[];
 };
+
+/**
+ * 주문 시드가 아메리카노 옵션 스냅샷을 참조하므로 id를 상수로 뽑아 둔다.
+ * 문자열을 양쪽에 손으로 적으면 조용히 어긋난다.
+ */
+export const AMERICANO_OPTION_IDS = {
+  bean: "opt7hqk3rj2avzxnq1ldm4b0",
+  beanKenya: "cho2wm5vt8pxk3jr7fa1nqe9",
+  beanCostaRica: "cho9xd4bn6vlqz2hme8trkw3",
+  kind: "optn5cwz8yqr1tvbxk3hdje7",
+  kindIce: "cho4tzr9wbnq6xmv1kf8ephd",
+  kindHot: "cho1jmp7dvxq4nbz8ws5rylc",
+  caffeine: "optq3fx8mrbwv7ztk2ncdhs1",
+  caffeineLight: "chodwn2qkv9xrb5m3tzp6faj",
+  caffeineStrong: "cho8vbz1rmqwn4dtx7kchsy2",
+  ice: "optzk6wdrn3qbmv9x2thpf5c",
+  iceNormal: "chorq5nvzt8wbdk1xm4jyhp7",
+  iceMuch: "cho3bwtnq7xzrv2mdk9jfhs4",
+  iceLittle: "chowm8dqz2vrn6xbk1tjyp5f",
+  shot: "opt5rmwbz9qxdn2vtk7hjc3f",
+  shotSingle: "cho6qzrwbn1vdmx8tk4jyfp2",
+  shotDecaf: "chob2wnqzr7vxdm3tk9jyfh5",
+} as const;
 
 // 두 매장에 공통으로 생성되는 메뉴 정의.
 // publicId는 매장별로 seed.ts에서 index suffix를 붙여 유일성을 확보한다.
+// 옵션 그룹·선택지 publicId와 trigger의 참조 id에도 같은 suffix가 붙는다.
 //
 // imageKey는 운영 CDN에 올려둔 샘플 이미지를 가리킨다.
 // 이미지를 보려면 각 prefix 아래에 hero.webp / thumbnail.webp가 있어야 한다.
@@ -36,41 +134,110 @@ export const menuSeeds: MenuSeed[] = [
     isAvailable: true,
     sortOrder: 10,
     imageKey: "menu/vces0z57pr4vwbhbmlnbzb5a",
-    requiredOptions: {
-      원두: {
-        options: [
-          { key: "케냐", price: 0 },
-          { key: "코스타리코", price: 500 },
+    // 옵션 기능 전체(단일·복수 선택, 수량, 품절, 조건부 노출)를 한 메뉴에서 보여준다.
+    options: [
+      {
+        publicId: AMERICANO_OPTION_IDS.bean,
+        name: "원두",
+        selectionType: OptionSelectionType.SINGLE,
+        required: true,
+        minSelect: 1,
+        choices: [
+          {
+            publicId: AMERICANO_OPTION_IDS.beanKenya,
+            name: "케냐",
+            isDefault: true,
+          },
+          {
+            publicId: AMERICANO_OPTION_IDS.beanCostaRica,
+            name: "코스타리코",
+            priceDelta: 500,
+          },
         ],
-        defaultKey: "케냐",
       },
-      종류: {
-        options: [
-          { key: "아이스", price: 0 },
-          { key: "핫", price: 0 },
+      {
+        publicId: AMERICANO_OPTION_IDS.kind,
+        name: "종류",
+        selectionType: OptionSelectionType.SINGLE,
+        required: true,
+        minSelect: 1,
+        choices: [
+          {
+            publicId: AMERICANO_OPTION_IDS.kindIce,
+            name: "아이스",
+            isDefault: true,
+          },
+          { publicId: AMERICANO_OPTION_IDS.kindHot, name: "핫" },
         ],
-        defaultKey: "아이스",
       },
-    },
-    customOptions: {
-      카페인: {
-        options: [
-          { key: "연하게", price: 0 },
-          { key: "진하게", price: 1000 },
+      {
+        publicId: AMERICANO_OPTION_IDS.caffeine,
+        name: "카페인",
+        selectionType: OptionSelectionType.SINGLE,
+        trigger: [
+          {
+            optionId: AMERICANO_OPTION_IDS.bean,
+            choiceIds: [
+              AMERICANO_OPTION_IDS.beanKenya,
+              AMERICANO_OPTION_IDS.beanCostaRica,
+            ],
+          },
         ],
-        trigger: [{ group: "원두", in: ["케냐", "코스타리코"] }],
-        defaultKey: "연하게",
-      },
-      얼음: {
-        options: [
-          { key: "보통", price: 0 },
-          { key: "많이", price: 0 },
-          { key: "적게", price: 0 },
+        choices: [
+          {
+            publicId: AMERICANO_OPTION_IDS.caffeineLight,
+            name: "연하게",
+            isDefault: true,
+          },
+          {
+            publicId: AMERICANO_OPTION_IDS.caffeineStrong,
+            name: "진하게",
+            priceDelta: 1000,
+          },
         ],
-        trigger: [{ group: "종류", in: ["아이스"] }],
-        defaultKey: "보통",
       },
-    },
+      {
+        publicId: AMERICANO_OPTION_IDS.ice,
+        name: "얼음",
+        selectionType: OptionSelectionType.SINGLE,
+        trigger: [
+          {
+            optionId: AMERICANO_OPTION_IDS.kind,
+            choiceIds: [AMERICANO_OPTION_IDS.kindIce],
+          },
+        ],
+        choices: [
+          {
+            publicId: AMERICANO_OPTION_IDS.iceNormal,
+            name: "보통",
+            isDefault: true,
+          },
+          { publicId: AMERICANO_OPTION_IDS.iceMuch, name: "많이" },
+          { publicId: AMERICANO_OPTION_IDS.iceLittle, name: "적게" },
+        ],
+      },
+      {
+        publicId: AMERICANO_OPTION_IDS.shot,
+        name: "샷 추가",
+        selectionType: OptionSelectionType.MULTIPLE,
+        maxSelect: 2,
+        choices: [
+          {
+            publicId: AMERICANO_OPTION_IDS.shotSingle,
+            name: "에스프레소 샷",
+            priceDelta: 500,
+            quantityEnabled: true,
+            maxQuantity: 3,
+          },
+          {
+            publicId: AMERICANO_OPTION_IDS.shotDecaf,
+            name: "디카페인 샷",
+            priceDelta: 800,
+            state: OptionChoiceState.SOLD_OUT,
+          },
+        ],
+      },
+    ],
   },
   {
     publicId: "tq2qu2n7aayzxzf837cto4a",
@@ -81,16 +248,22 @@ export const menuSeeds: MenuSeed[] = [
     isAvailable: true,
     sortOrder: 20,
     imageKey: "menu/kq9va1czvbo9b15brjfp6g5o",
-    customOptions: {
-      얼음: {
-        options: [
-          { key: "보통", price: 0 },
-          { key: "많이", price: 0 },
-          { key: "적게", price: 0 },
+    options: [
+      {
+        publicId: "optdrip1zqwnrbvx3mtk7hj5",
+        name: "얼음",
+        selectionType: OptionSelectionType.SINGLE,
+        choices: [
+          {
+            publicId: "chodrip1nvzqrwbm2xtk8jy4",
+            name: "보통",
+            isDefault: true,
+          },
+          { publicId: "chodrip2wqzrnvbm5xtk1jy9", name: "많이" },
+          { publicId: "chodrip3rzqwnvbm7xtk3jy6", name: "적게" },
         ],
-        defaultKey: "보통",
       },
-    },
+    ],
   },
   {
     publicId: "ohovsqjy5mavzgk1xu187xw",
@@ -121,17 +294,26 @@ export const menuSeeds: MenuSeed[] = [
     isAvailable: true,
     sortOrder: 50,
     imageKey: "menu/ca58mxnw9i8ngajlc0ra9w45",
-    customOptions: {
-      휘핑: {
-        options: [
-          { key: "보통", price: 0 },
-          { key: "없이", price: 0 },
-          { key: "많이", price: 300 },
+    options: [
+      {
+        publicId: "optwhip1qzrnwbvm3xtk5jy8",
+        name: "휘핑",
+        selectionType: OptionSelectionType.SINGLE,
+        choices: [
+          {
+            publicId: "chowhip1nzqrwbvm4xtk6jy1",
+            name: "보통",
+            isDefault: true,
+          },
+          { publicId: "chowhip2rzqnwbvm8xtk2jy7", name: "없이" },
+          {
+            publicId: "chowhip3wzqrnbvm1xtk9jy3",
+            name: "많이",
+            priceDelta: 300,
+          },
         ],
-        trigger: [],
-        defaultKey: "보통",
       },
-    },
+    ],
   },
   {
     publicId: "lwhdq1qwcmckm3k4nni89b1",
@@ -162,17 +344,26 @@ export const menuSeeds: MenuSeed[] = [
     isAvailable: true,
     sortOrder: 30,
     imageKey: "menu/pw6qgzm21a3gekw0fax93545",
-    customOptions: {
-      "메뉴 추가": {
-        options: [
-          { key: "없이", price: 0 },
-          { key: "딸기잼", price: 500 },
-          { key: "크림치즈28g", price: 1000 },
+    options: [
+      {
+        publicId: "optadd1qzrwnbvm6xtk4jy2s",
+        name: "메뉴 추가",
+        selectionType: OptionSelectionType.MULTIPLE,
+        maxSelect: 2,
+        choices: [
+          {
+            publicId: "choadd1nzqwrbvm9xtk7jy5d",
+            name: "딸기잼",
+            priceDelta: 500,
+          },
+          {
+            publicId: "choadd2rzqwnbvm2xtk8jy1f",
+            name: "크림치즈28g",
+            priceDelta: 1000,
+          },
         ],
-        trigger: [],
-        defaultKey: "없이",
       },
-    },
+    ],
   },
   {
     publicId: "gyi72p9yncptb62pb2pcc34g",

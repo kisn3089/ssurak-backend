@@ -1,6 +1,13 @@
 import { HttpStatus } from "@nestjs/common";
 import { createId } from "@paralleldrive/cuid2";
-import { Menu, SessionWithTable, TableSessionStatus } from "@ssurak/db";
+import {
+  Menu,
+  OptionChoiceState,
+  OptionSelectionType,
+  SessionWithTable,
+  TableSessionStatus,
+} from "@ssurak/db";
+import type { MenuValidationFields } from "src/common/validate/menu/mismatch";
 import Redis from "ioredis";
 import Redlock from "redlock";
 import {
@@ -46,7 +53,85 @@ const menuImageService = new MenuImageService(configService);
 
 const service = new CartService(redis, redlock, prismaMock, menuImageService);
 
-const menuFixture = (overrides: Partial<Menu> = {}): Menu => ({
+type OptionGroup = MenuValidationFields["options"][number];
+
+/** 사이즈: 필수 단일 선택 (톨 0 / 라지 +500) */
+const SIZE_GROUP: OptionGroup = {
+  publicId: "optsize",
+  name: "사이즈",
+  selectionType: OptionSelectionType.SINGLE,
+  required: true,
+  minSelect: 1,
+  maxSelect: 1,
+  sortOrder: 10,
+  enabled: true,
+  trigger: null,
+  choices: [
+    {
+      publicId: "chotall",
+      name: "톨",
+      priceDelta: 0,
+      quantityEnabled: false,
+      maxQuantity: 1,
+      isDefault: true,
+      sortOrder: 10,
+      state: OptionChoiceState.AVAILABLE,
+    },
+    {
+      publicId: "cholarge",
+      name: "라지",
+      priceDelta: 500,
+      quantityEnabled: false,
+      maxQuantity: 1,
+      isDefault: false,
+      sortOrder: 20,
+      state: OptionChoiceState.AVAILABLE,
+    },
+  ],
+};
+
+/** 샷: 0~2개 복수 선택, 수량 3개까지 */
+const SHOT_GROUP: OptionGroup = {
+  publicId: "optshot",
+  name: "샷 추가",
+  selectionType: OptionSelectionType.MULTIPLE,
+  required: false,
+  minSelect: 0,
+  maxSelect: 2,
+  sortOrder: 20,
+  enabled: true,
+  trigger: null,
+  choices: [
+    {
+      publicId: "choshot",
+      name: "에스프레소 샷",
+      priceDelta: 300,
+      quantityEnabled: true,
+      maxQuantity: 3,
+      isDefault: false,
+      sortOrder: 10,
+      state: OptionChoiceState.AVAILABLE,
+    },
+    {
+      publicId: "chosyrup",
+      name: "시럽",
+      priceDelta: 200,
+      quantityEnabled: false,
+      maxQuantity: 1,
+      isDefault: false,
+      sortOrder: 20,
+      state: OptionChoiceState.AVAILABLE,
+    },
+  ],
+};
+
+/**
+ * Prisma mock은 전체 row 타입을 요구하지만 서비스는 select로 좁힌 형태만 읽는다.
+ * 두 타입을 모두 만족시키려면 스칼라를 전부 채운 뒤 options를 얹으면 된다.
+ */
+const menuFixture = (
+  overrides: Partial<MenuValidationFields> = {}
+): Menu & MenuValidationFields => ({
   id: 1n,
   publicId: "menu-americano",
   categoryId: 1n,
@@ -59,16 +144,7 @@ const menuFixture = (overrides: Partial<Menu> = {}): Menu => ({
   createdAt: new Date(),
   updatedAt: new Date(),
   deletedAt: null,
-  requiredOptions: {
-    사이즈: {
-      options: [
-        { key: "톨", price: 0 },
-        { key: "라지", price: 500 },
-      ],
-      defaultKey: "톨",
-    },
-  },
-  customOptions: null,
+  options: [SIZE_GROUP, SHOT_GROUP],
   ...overrides,
 });
 
@@ -110,10 +186,16 @@ const sessionFixture = (
   };
 };
 
+/** 사이즈 라지(+500) 선택 */
 const americanoPayload = (quantity = 1) => ({
   menuPublicId: "menu-americano",
   quantity,
-  requiredOptions: { 사이즈: "라지" },
+  options: [selectSize("cholarge")],
+});
+
+const selectSize = (choiceId: string) => ({
+  optionId: "optsize",
+  choices: [{ choiceId, quantity: 1 }],
 });
 
 beforeAll(async () => {
@@ -190,7 +272,20 @@ describe("CartService.addItem", () => {
       optionsPrice: 500,
       unitPrice: 3500,
       quantity: 2,
-      requiredOptions: { 사이즈: "라지" },
+      options: [
+        {
+          optionId: "optsize",
+          name: "사이즈",
+          choices: [
+            {
+              choiceId: "cholarge",
+              name: "라지",
+              priceDelta: 500,
+              quantity: 1,
+            },
+          ],
+        },
+      ],
     });
     expect(meta).toEqual({ menuName: "아메리카노" });
     expect(subscriber).toEqual({
@@ -220,12 +315,76 @@ describe("CartService.addItem", () => {
     const { cart } = await service.addItem(session, {
       menuPublicId: "menu-americano",
       quantity: 1,
-      requiredOptions: { 사이즈: "톨" },
+      options: [selectSize("chotall")],
     });
 
     expect(cart.menus).toHaveLength(2);
     const fingerprints = cart.menus.map((m) => m.fingerprint);
     expect(new Set(fingerprints).size).toBe(2);
+  });
+
+  it("같은 선택을 배열 순서만 바꿔 보내도 같은 항목으로 병합된다", async () => {
+    const session = sessionFixture();
+    const shot = {
+      optionId: "optshot",
+      choices: [{ choiceId: "choshot", quantity: 1 }],
+    };
+
+    await service.addItem(session, {
+      menuPublicId: "menu-americano",
+      quantity: 1,
+      options: [selectSize("cholarge"), shot],
+    });
+    const { cart, meta } = await service.addItem(session, {
+      menuPublicId: "menu-americano",
+      quantity: 1,
+      options: [shot, selectSize("cholarge")],
+    });
+
+    expect(cart.menus).toHaveLength(1);
+    expect(cart.menus[0].quantity).toBe(2);
+    expect(meta.isMerged).toBe(true);
+  });
+
+  it("같은 선택지라도 수량이 다르면 별도 항목이다", async () => {
+    const session = sessionFixture();
+    const withShots = (quantity: number) => ({
+      menuPublicId: "menu-americano",
+      quantity: 1,
+      options: [
+        selectSize("cholarge"),
+        { optionId: "optshot", choices: [{ choiceId: "choshot", quantity }] },
+      ],
+    });
+
+    await service.addItem(session, withShots(1));
+    const { cart } = await service.addItem(session, withShots(2));
+
+    // 샷 2개는 1개와 다른 상품이다 — 합쳐지면 결제 금액이 어긋난다.
+    expect(cart.menus).toHaveLength(2);
+    expect(cart.menus.map((m) => m.optionsPrice)).toEqual([800, 1100]);
+  });
+
+  it("복수 선택은 선택지별 priceDelta × 수량을 모두 합산한다", async () => {
+    const session = sessionFixture();
+    const { cart } = await service.addItem(session, {
+      menuPublicId: "menu-americano",
+      quantity: 1,
+      options: [
+        selectSize("cholarge"),
+        {
+          optionId: "optshot",
+          choices: [
+            { choiceId: "choshot", quantity: 3 },
+            { choiceId: "chosyrup", quantity: 1 },
+          ],
+        },
+      ],
+    });
+
+    // 라지 500 + 샷 300 × 3 + 시럽 200
+    expect(cart.menus[0].optionsPrice).toBe(1600);
+    expect(cart.menus[0].unitPrice).toBe(4600);
   });
 
   it("만료된 세션이면 SESSION_EXPIRED(400)를 던진다", async () => {
@@ -261,15 +420,15 @@ describe("CartService.updateItem", () => {
 
     const { cart } = await service.updateItem(session, itemId, {
       quantity: 5,
-      requiredOptions: { 사이즈: "톨" },
+      options: [selectSize("chotall")],
     });
 
     expect(cart.menus[0]).toMatchObject({
       quantity: 5,
       optionsPrice: 0,
       unitPrice: 3000,
-      requiredOptions: { 사이즈: "톨" },
     });
+    expect(cart.menus[0].options?.[0].choices[0].choiceId).toBe("chotall");
   });
 
   it("변경 결과가 다른 아이템과 같은 조합이 되면 하나로 병합한다", async () => {
@@ -278,7 +437,7 @@ describe("CartService.updateItem", () => {
     const tallItem = await service.addItem(session, {
       menuPublicId: "menu-americano",
       quantity: 1,
-      requiredOptions: { 사이즈: "톨" },
+      options: [selectSize("chotall")],
     });
     const tallItemId = tallItem.cart.menus.find(
       (m) => m.id !== first.menus[0].id
@@ -286,12 +445,69 @@ describe("CartService.updateItem", () => {
 
     // 톨 → 라지로 변경하면 기존 라지 아이템과 병합돼야 한다
     const { cart, meta } = await service.updateItem(session, tallItemId, {
-      requiredOptions: { 사이즈: "라지" },
+      options: [selectSize("cholarge")],
     });
 
     expect(cart.menus).toHaveLength(1);
     expect(cart.menus[0].quantity).toBe(3);
     expect(meta.isMerged).toBe(true);
+  });
+
+  /**
+   * 조건이 되는 그룹을 바꾸는 한 번의 요청으로 끝나야 한다. 저장된 선택까지 400으로 막으면
+   * 손님이 "얼음을 먼저 비우고 → 종류를 바꾸는" 두 단계를 밟아야 한다.
+   */
+  it("조건이 되는 그룹을 바꾸면 조건이 깨진 그룹의 저장된 선택은 조용히 빠진다", async () => {
+    const iceGroup: OptionGroup = {
+      ...SHOT_GROUP,
+      publicId: "opticecube",
+      name: "얼음",
+      selectionType: OptionSelectionType.SINGLE,
+      maxSelect: 1,
+      sortOrder: 30,
+      // 사이즈가 라지일 때만 노출된다.
+      trigger: [{ optionId: "optsize", choiceIds: ["cholarge"] }],
+      choices: [
+        {
+          publicId: "choiceless",
+          name: "얼음 적게",
+          priceDelta: 100,
+          quantityEnabled: false,
+          maxQuantity: 1,
+          isDefault: false,
+          sortOrder: 10,
+          state: OptionChoiceState.AVAILABLE,
+        },
+      ],
+    };
+    prismaMock.menu.findFirstOrThrow.mockResolvedValue(
+      menuFixture({ options: [SIZE_GROUP, iceGroup] })
+    );
+
+    const session = sessionFixture();
+    const { cart: added } = await service.addItem(session, {
+      menuPublicId: "menu-americano",
+      quantity: 1,
+      options: [
+        selectSize("cholarge"),
+        {
+          optionId: "opticecube",
+          choices: [{ choiceId: "choiceless", quantity: 1 }],
+        },
+      ],
+    });
+    const itemId = added.menus[0].id;
+
+    // 라지 → 톨. 얼음은 페이로드에 없지만 저장된 선택으로 병합돼 딸려온다.
+    const { cart } = await service.updateItem(session, itemId, {
+      options: [selectSize("chotall")],
+    });
+
+    expect(cart.menus[0].options?.map((group) => group.optionId)).toEqual([
+      "optsize",
+    ]);
+    expect(cart.menus[0].optionsPrice).toBe(0);
+    expect(cart.menus[0].unitPrice).toBe(3000);
   });
 
   it("없는 아이템이면 CART_ITEM_NOT_FOUND(404)", async () => {
@@ -376,7 +592,7 @@ describe("CartService.removeOrderedItems", () => {
     await service.addItem(session, {
       menuPublicId: "menu-americano",
       quantity: 1,
-      requiredOptions: { 사이즈: "톨" },
+      options: [selectSize("chotall")],
     });
 
     await service.removeOrderedItems(session, orderedItems);
