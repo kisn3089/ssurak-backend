@@ -16,13 +16,19 @@ import { CategoryController } from "./menu/category.controller";
 import { MenuOptionChoiceService } from "./menu/menu-option-choice.service";
 import { MenuOptionController } from "./menu/menu-option.controller";
 import { MenuOptionService } from "./menu/menu-option.service";
+import { MenuDraftController } from "./menu/menu-draft.controller";
+import { MenuDraftService } from "./menu/menu-draft.service";
+import { MenuVisionClient } from "./menu/menu-vision.client";
+import { OpenAiModule } from "src/common/ai/openai.module";
 
 @Module({
   // MenuService가 이미지 확정(promoteMenuImage)에 StorageService를 쓴다.
-  imports: [PassportModule, JwtModule, StorageModule],
+  // OpenAiModule은 메뉴판 사진 인식(MenuVisionClient)에만 쓰인다.
+  imports: [PassportModule, JwtModule, StorageModule, OpenAiModule],
   controllers: [
     StoresController,
     MenuController,
+    MenuDraftController,
     TableController,
     SessionController,
     CategoryController,
@@ -32,6 +38,8 @@ import { MenuOptionService } from "./menu/menu-option.service";
   providers: [
     StoresService,
     MenuService,
+    MenuDraftService,
+    MenuVisionClient,
     MenuOptionService,
     MenuOptionChoiceService,
     CategoryService,

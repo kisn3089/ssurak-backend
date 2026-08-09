@@ -27,13 +27,7 @@ import {
   parseOwnedTmpPrefix,
   tmpPrefixOf,
 } from "./image-key";
-
-/**
- * 디코딩 사이즈 방어선. MAX_FILE_SIZE(5MB)는 파일 크기만 제한하므로
- * 고압축 PNG 한 장이 디코딩 시 수 GB를 먹는 걸 막지 못한다.
- * 메모리를 결정하는 건 파일 크기가 아니라 픽셀 수다.
- */
-const MAX_INPUT_PIXELS = 50_000_000;
+import { MAX_INPUT_PIXELS } from "./storage.constants";
 
 export interface VariantInfo {
   width: number;

@@ -16,13 +16,17 @@ export type CreateCategoryPayload = z.infer<typeof createCategoryPayloadSchema>;
  * `sortOrder`는 클라이언트가 쓰지 않는다 — 생성은 항상 맨 뒤에 붙고,
  * 순서 변경은 전용 재정렬 엔드포인트로만 한다.
  */
+export const categoryNameSchema = z
+  .string()
+  .trim()
+  .min(1, "카테고리 이름은 필수입니다.")
+  .max(20, "카테고리 이름은 최대 20자까지 가능합니다.");
+
+export const CATEGORY_NAME_MAX = 20;
+
 export const createCategoryPayloadSchema = z
   .object({
-    name: z
-      .string()
-      .trim()
-      .min(1, "카테고리 이름은 필수입니다.")
-      .max(20, "카테고리 이름은 최대 20자까지 가능합니다."),
+    name: categoryNameSchema,
   })
   .strict();
 

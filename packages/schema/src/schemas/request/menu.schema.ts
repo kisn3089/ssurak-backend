@@ -9,19 +9,29 @@ const menuIdParamsSchema = z
 export const storeIdAndMenuIdParamsSchema =
   storeIdParamsSchema.merge(menuIdParamsSchema);
 
+/**
+ * 메뉴 이름·설명 제약. 메뉴판 사진 일괄 등록(bulk)도 같은 값을 써야
+ * 초안 화면에서 통과한 값이 저장 단계에서 400으로 돌아오지 않는다.
+ */
+export const menuNameSchema = z
+  .string()
+  .trim()
+  .min(1, "메뉴 이름은 필수입니다.")
+  .max(30, "메뉴 이름은 최대 30자까지 가능합니다.");
+
+export const MENU_NAME_MAX = 30;
+
+export const menuDescriptionSchema = z
+  .string()
+  .max(100, "메뉴 설명은 최대 100자까지 가능합니다.");
+
+export const MENU_DESCRIPTION_MAX = 100;
+
 export const createMenuPayloadSchema = z
   .object({
-    name: z
-      .string()
-      .trim()
-      .min(1, "메뉴 이름은 필수입니다.")
-      .max(30, "메뉴 이름은 최대 30자까지 가능합니다."),
+    name: menuNameSchema,
     price: commonSchema.menuPrice,
-    description: z
-      .string()
-      .max(100, "메뉴 설명은 최대 100자까지 가능합니다.")
-      .nullable()
-      .optional(),
+    description: menuDescriptionSchema.nullable().optional(),
     // 업로드 응답으로 받은 임시 키(`tmp/{ownerId}/{cuid}`)를 그대로 실어 보낸다.
     // URL 형식 검증은 의미가 없다 — 서버가 요청자 소유인지를 직접 대조한다.
     // null을 명시하면 이미지를 제거한다(수정 시).

@@ -18,6 +18,7 @@ import { ZodValidation } from "src/utils/guards/zod-validation.guard";
 import { Client } from "src/decorators/client.decorator";
 import { PublicMenuDto } from "../../dto/response/menu.dto";
 import {
+  bulkCreateMenusPayloadSchema,
   createMenuPayloadSchema,
   reorderMenusPayloadSchema,
   storeIdAndMenuIdParamsSchema,
@@ -32,7 +33,9 @@ import {
   DocsMenuReorder,
   DocsMenuUpdate,
 } from "src/docs/menu.docs";
+import { DocsMenuBulkCreate } from "src/docs/menuDraft.docs";
 import {
+  BulkCreateMenusPayloadDto,
   CreateMenuPayloadDto,
   ReorderMenusPayloadDto,
   UpdateMenuPayloadDto,
@@ -72,6 +75,34 @@ export class MenuController {
     );
 
     return PublicMenuDto.schema.parse(this.menuImageService.toView(created));
+  }
+
+  /**
+   * 메뉴판 사진 초안 확정용 일괄 등록.
+   * `:menuId` 라우트와 메서드가 달라 충돌하지 않지만, 생성 계열끼리 모아 둔다.
+   */
+  @Post("bulk")
+  @UseGuards(
+    ZodValidation({
+      params: storeIdParamsSchema,
+      body: bulkCreateMenusPayloadSchema,
+    })
+  )
+  @DocsMenuBulkCreate()
+  async bulkCreate(
+    @Client() client: Owner,
+    @Param("storeId") storeId: string,
+    @Body() bulkCreateMenusPayload: BulkCreateMenusPayloadDto
+  ): Promise<PublicMenuDto[]> {
+    const created = await this.menuService.bulkCreateMenus(
+      client,
+      storeId,
+      bulkCreateMenusPayload
+    );
+
+    return this.menuImageService
+      .toViewList(created)
+      .map((menu) => PublicMenuDto.schema.parse(menu));
   }
 
   @Get()

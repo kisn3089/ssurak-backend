@@ -13,36 +13,25 @@ import type { Owner } from "@ssurak/db";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { Client } from "src/decorators/client.decorator";
 import { MulterExceptionFilter } from "./filter/multer-exception.filter";
+import { imageUploadOptions } from "./image-upload.options";
 import {
   FILE_FIELD_NAME,
-  IMAGE_MIME,
   MAX_FILE_SIZE,
+  MAX_FILE_SIZE_MB,
 } from "./storage.constants";
 import { StorageService } from "./storage.service";
 
 @Controller()
 @UseGuards(JwtAuthGuard)
-@UseFilters(MulterExceptionFilter)
+@UseFilters(
+  MulterExceptionFilter({ maxFileSizeMb: MAX_FILE_SIZE_MB, maxCount: 1 })
+)
 export class StorageController {
   constructor(private readonly storageService: StorageService) {}
 
   @Post()
   @UseInterceptors(
-    FileInterceptor(FILE_FIELD_NAME, {
-      limits: { fileSize: MAX_FILE_SIZE },
-      fileFilter: (_req, file, callback) => {
-        if (!IMAGE_MIME.test(file.mimetype)) {
-          callback(
-            new BadRequestException(
-              "png, jpg, jpeg, webp, gif, avif, tiff, heic 파일만 업로드할 수 있습니다."
-            ),
-            false
-          );
-          return;
-        }
-        callback(null, true);
-      },
-    })
+    FileInterceptor(FILE_FIELD_NAME, imageUploadOptions(MAX_FILE_SIZE))
   )
   async upload(
     @Client() owner: Owner,
