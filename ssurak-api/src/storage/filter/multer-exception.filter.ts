@@ -18,8 +18,6 @@ import {
  * MulterError는 여기까지 도달하지 않는다. FileInterceptor가 내부에서 transformException으로
  * 이미 HttpException(PayloadTooLargeException / BadRequestException)으로 바꿔 던지기 때문에
  * `@Catch(MulterError)`는 발화하지 않는다. 그래서 변환된 예외의 영문 메시지를 되짚는다.
- *
- * 원문은 @nestjs/platform-express의 multerExceptions 상수를 따른다.
  */
 const TRANSLATIONS: ReadonlyArray<{
   match: (message: string) => boolean;
