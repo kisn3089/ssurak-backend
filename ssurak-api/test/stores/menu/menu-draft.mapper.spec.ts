@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { NotFoundException } from "@nestjs/common";
 import { PRICE_MAX, type MenuExtraction } from "@ssurak/schema";
 import {
+  reviseMenuDraftItems,
   toMenuDraft,
   type MenuDraftContext,
 } from "src/stores/menu/menu-draft.mapper";
@@ -240,6 +242,94 @@ describe("toMenuDraft — 중복", () => {
     );
 
     expect(items).toHaveLength(2);
+  });
+});
+
+describe("reviseMenuDraftItems — 사장님이 고친 항목", () => {
+  const categories = [{ publicId: "cat-1", name: "찌개류" }];
+
+  it("채워 넣은 값에서는 표시를 걷어낸다", () => {
+    const [item] = reviseMenuDraftItems(
+      [{ name: "김치찌개", price: 9000, categoryId: "cat-1" }],
+      context({ categories })
+    );
+
+    expect(item.issues).toEqual([]);
+    expect(item.category).toEqual({
+      kind: "existing",
+      categoryId: "cat-1",
+      name: "찌개류",
+    });
+  });
+
+  it("아직 안 정한 값에는 표시를 다시 붙인다", () => {
+    // 클라이언트가 issues를 지워 보내도 서버가 다시 계산하므로 화면과 저장이 어긋나지 않는다.
+    const [item] = reviseMenuDraftItems(
+      [{ name: "된장찌개", price: null }],
+      context({ categories })
+    );
+
+    expect(item.issues).toEqual(
+      expect.arrayContaining(["PRICE_MISSING", "CATEGORY_UNKNOWN"])
+    );
+    expect(item.category).toEqual({ kind: "unknown" });
+  });
+
+  it("이름으로 보냈어도 매장에 있으면 기존 카테고리에 붙인다", () => {
+    const [item] = reviseMenuDraftItems(
+      [{ name: "김치찌개", price: 9000, categoryName: "찌개류" }],
+      context({ categories })
+    );
+
+    expect(item.category).toEqual({
+      kind: "existing",
+      categoryId: "cat-1",
+      name: "찌개류",
+    });
+  });
+
+  it("매장에 없는 이름은 새로 만들 대상으로 남긴다", () => {
+    const [item] = reviseMenuDraftItems(
+      [{ name: "삼겹살", price: 15000, categoryName: "구이류" }],
+      context({ categories })
+    );
+
+    expect(item.category).toEqual({ kind: "new", name: "구이류" });
+  });
+
+  it("다른 매장의 카테고리 ID는 거절한다", () => {
+    // 초안에 심어두면 확정 단계에서야 터진다.
+    expect(() =>
+      reviseMenuDraftItems(
+        [{ name: "김치찌개", price: 9000, categoryId: "cat-other" }],
+        context({ categories })
+      )
+    ).toThrow(NotFoundException);
+  });
+
+  it("매장에 이미 있는 이름은 중복으로 표시한다", () => {
+    const [item] = reviseMenuDraftItems(
+      [{ name: "김치찌개", price: 9000, categoryId: "cat-1" }],
+      context({ categories, existingMenuNames: ["김치찌개"] })
+    );
+
+    expect(item.issues).toContain("DUPLICATE_NAME");
+  });
+
+  it("빈 설명은 null로 정리한다", () => {
+    const [item] = reviseMenuDraftItems(
+      [
+        {
+          name: "김치찌개",
+          price: 9000,
+          description: "  ",
+          categoryId: "cat-1",
+        },
+      ],
+      context({ categories })
+    );
+
+    expect(item.description).toBeNull();
   });
 });
 

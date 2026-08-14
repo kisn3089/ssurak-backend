@@ -1,12 +1,14 @@
+import { NotFoundException } from "@nestjs/common";
 import {
   CATEGORY_NAME_MAX,
   MENU_DESCRIPTION_MAX,
   MENU_NAME_MAX,
   PRICE_MAX,
   type MenuDraftCategory,
+  type MenuDraftContent,
   type MenuDraftIssue,
   type MenuDraftItem,
-  type MenuDraftResponse,
+  type MenuDraftItemPayload,
   type MenuExtraction,
 } from "@ssurak/schema";
 
@@ -16,9 +18,7 @@ export interface DraftCategoryRef {
 }
 
 export interface MenuDraftContext {
-  /** 매장의 기존 카테고리. 인식된 분류명을 여기에 붙일 수 있으면 새로 만들지 않는다. */
   categories: DraftCategoryRef[];
-  /** 매장에 이미 등록된 메뉴 이름. 같은 메뉴판을 두 번 올렸을 때 중복을 표시한다. */
   existingMenuNames: string[];
 }
 
@@ -32,19 +32,10 @@ export interface MenuDraftContext {
 const normalizeKey = (raw: string): string =>
   raw.normalize("NFC").trim().toLowerCase().replace(/\s+/g, "");
 
-/**
- * 모델 출력을 사장님이 검토할 초안으로 바꾼다.
- *
- * 규격을 벗어난 항목을 버리지 않는 것이 핵심이다 — 40개 중 1개가 31자라고
- * 전체를 거절하면 사진을 다시 찍는 것 말고 할 수 있는 게 없다. 대신 값은 살릴 수
- * 있는 데까지 손질하고, 손댄 자리와 사람이 채워야 할 자리를 `issues`로 표시한다.
- *
- * 순수 함수다(DB·네트워크 없음). 인식 품질과 무관하게 이 변환의 정확성만 따로 검증한다.
- */
 export function toMenuDraft(
   extraction: MenuExtraction,
   context: MenuDraftContext
-): MenuDraftResponse {
+): MenuDraftContent {
   const categoryIndex = new Map(
     context.categories.map((category) => [
       normalizeKey(category.name),
@@ -52,16 +43,12 @@ export function toMenuDraft(
     ])
   );
 
-  // 매장의 기존 메뉴명으로 시작해 항목마다 채워 나간다.
-  // 하나의 집합으로 "이미 등록됨"과 "이번 사진들 안에서 중복"을 함께 잡는다
-  // (메뉴판을 여러 장 찍으면 겹치는 구간이 생기기 마련이다).
   const seenNames = new Set(context.existingMenuNames.map(normalizeKey));
 
-  const items: MenuDraftItem[] = [];
+  const draftItems: MenuDraftItem[] = [];
 
   for (const raw of extraction.items) {
     const name = raw.name.normalize("NFC").trim();
-    // 이름이 없으면 사장님이 고칠 대상 자체가 없다 — 빈 줄만 늘어난다.
     if (name.length === 0) continue;
 
     const issues: MenuDraftIssue[] = [];
@@ -77,22 +64,108 @@ export function toMenuDraft(
     if (seenNames.has(key)) issues.push("DUPLICATE_NAME");
     seenNames.add(key);
 
-    items.push({ name: boundedName, price, description, category, issues });
+    draftItems.push({
+      name: boundedName,
+      price,
+      description,
+      category,
+      issues,
+    });
   }
 
   return {
-    items,
+    items: draftItems,
     unreadableCount: resolveUnreadable(extraction.unreadableCount),
   };
 }
 
 /**
- * 가격을 도메인 범위(0~PRICE_MAX의 1원 단위 정수)로 맞춘다.
+ * 사장님이 고친 항목을 저장할 초안 항목으로 되돌린다.
  *
- * 범위를 벗어난 값은 잘라 맞추지 않고 비운다. 자릿수 오인식(9,000 → 90000)을
- * 상한으로 클램프하면 그럴듯한 틀린 값이 남아 사장님이 그냥 저장해 버린다.
- * null이면 UI가 빈 칸으로 보여주므로 반드시 눈에 걸린다.
+ * `issues`를 요청에서 받지 않고 다시 계산하는 이유: 가격을 채웠는데 PRICE_MISSING이
+ * 그대로 남아 있거나, 클라이언트가 표시를 지워 보내는 걸 막기 위해서다. 길이·가격 범위는
+ * 요청 스키마가 이미 거절하므로 여기서 남는 표시는 "아직 안 정한 것"과 중복뿐이다.
  */
+export function reviseMenuDraftItems(
+  payload: MenuDraftItemPayload[],
+  context: MenuDraftContext
+): MenuDraftItem[] {
+  const byPublicId = new Map(
+    context.categories.map((category) => [category.publicId, category])
+  );
+  const byName = new Map(
+    context.categories.map((category) => [
+      normalizeKey(category.name),
+      category,
+    ])
+  );
+
+  const seenNames = new Set(context.existingMenuNames.map(normalizeKey));
+
+  return payload.map((raw) => {
+    const issues: MenuDraftIssue[] = [];
+
+    const name = raw.name.normalize("NFC").trim();
+    const category = resolveEditedCategory(raw, byPublicId, byName, issues);
+
+    if (raw.price === null) issues.push("PRICE_MISSING");
+
+    const key = normalizeKey(name);
+    if (seenNames.has(key)) issues.push("DUPLICATE_NAME");
+    seenNames.add(key);
+
+    return {
+      name,
+      price: raw.price,
+      description: normalizeDescription(raw.description),
+      category,
+      issues,
+    };
+  });
+}
+
+/** 사장님이 고른 카테고리를 확정한다. 이름으로 보냈어도 매장에 있으면 기존 것에 붙인다. */
+function resolveEditedCategory(
+  raw: MenuDraftItemPayload,
+  byPublicId: Map<string, DraftCategoryRef>,
+  byName: Map<string, DraftCategoryRef>,
+  issues: MenuDraftIssue[]
+): MenuDraftCategory {
+  if (raw.categoryId !== undefined) {
+    const matched = byPublicId.get(raw.categoryId);
+    // 다른 매장의 카테고리나 그 사이 지워진 카테고리를 초안에 심지 않는다.
+    if (!matched) {
+      throw new NotFoundException(
+        `카테고리 ${raw.categoryId}를 찾을 수 없습니다.`
+      );
+    }
+    return {
+      kind: "existing",
+      categoryId: matched.publicId,
+      name: matched.name,
+    };
+  }
+
+  if (raw.categoryName !== undefined) {
+    const name = raw.categoryName.normalize("NFC").trim();
+    const matched = byName.get(normalizeKey(name));
+
+    return matched
+      ? { kind: "existing", categoryId: matched.publicId, name: matched.name }
+      : { kind: "new", name };
+  }
+
+  issues.push("CATEGORY_UNKNOWN");
+  return { kind: "unknown" };
+}
+
+function normalizeDescription(raw: string | null | undefined): string | null {
+  if (raw === null || raw === undefined) return null;
+
+  const description = raw.normalize("NFC").trim();
+  return description.length === 0 ? null : description;
+}
+
 function resolvePrice(
   raw: number | null,
   issues: MenuDraftIssue[]
@@ -127,12 +200,7 @@ function resolveDescription(
   return bounded;
 }
 
-/**
- * 인식된 분류명을 기존 카테고리·신규 카테고리·미정 중 하나로 확정한다.
- *
- * 저장할 수 없는 이름(20자 초과)은 `new`로 내보내지 않는다 — 확정 단계에서
- * 어차피 거절될 값을 초안에 남기면 사장님이 저장 버튼을 눌러야 알게 된다.
- */
+/** 인식된 분류명을 기존 카테고리·신규 카테고리·미정 중 하나로 확정한다. */
 function resolveCategory(
   raw: string | null,
   index: Map<string, DraftCategoryRef>,

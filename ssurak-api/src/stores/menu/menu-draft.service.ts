@@ -5,43 +5,50 @@ import {
   Inject,
   Injectable,
   Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+  UnprocessableEntityException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Redis } from "ioredis";
 import type { Owner } from "@ssurak/db";
 import {
-  menuExtractionSchema,
+  DRAFT_ID_LENGTH,
+  type MenuDraftListResponse,
   type MenuDraftResponse,
+  type MenuDraftSourceImage,
   type MenuExtraction,
+  type UpdateMenuDraftPayload,
 } from "@ssurak/schema";
 import { PrismaService } from "src/prisma/prisma.service";
 import { REDIS_CLIENT } from "src/redis/redis.provider";
 import { toOcrImage, type OcrImage } from "src/storage/image-ocr";
+import { toThumbnailDataUrl } from "src/storage/image-thumbnail";
 import { MenuVisionClient } from "./menu-vision.client";
-import { toMenuDraft, type MenuDraftContext } from "./menu-draft.mapper";
+import {
+  reviseMenuDraftItems,
+  toMenuDraft,
+  type DraftCategoryRef,
+  type MenuDraftContext,
+} from "./menu-draft.mapper";
+import {
+  DRAFT_TTL_SECONDS,
+  MenuDraftStore,
+  type DraftScope,
+} from "./menu-draft.store";
 
-/** 점주 1인당 시간당 인식 횟수. 인증된 요청이 그대로 토큰 비용이라 상한이 필요하다. */
 const DEFAULT_HOURLY_LIMIT = 10;
-const RATE_WINDOW_SECONDS = 60 * 60;
-
-/**
- * 같은 사진 재요청에 대한 캐시 수명.
- *
- * 네트워크가 끊겨 다시 누르거나 뒤로 갔다 돌아오는 흐름에서 같은 사진이 반복해서
- * 들어온다. 이 캐시가 없으면 그때마다 그대로 과금된다.
- */
-const CACHE_TTL_SECONDS = 10 * 60;
+const RATE_WINDOW_SECONDS = 60 * 60; // 1시간
 
 const rateKeyOf = (ownerPublicId: string): string =>
   `menu-draft:rate:${ownerPublicId}`;
-const cacheKeyOf = (digest: string): string => `menu-draft:cache:${digest}`;
 
-/**
- * 메뉴판 사진에서 메뉴 초안을 뽑는 흐름의 오케스트레이션.
- *
- * 전처리 → 비전 호출 → 정규화 순서로만 엮고, 각 단계의 판단은 해당 모듈이 갖는다.
- * DB에는 아무것도 쓰지 않는다 — 확정은 사장님이 검토한 뒤 일괄 등록으로 한다.
- */
+export interface DraftImageUpload {
+  buffer: Buffer;
+  fileName: string;
+  byteSize: number;
+}
+
 @Injectable()
 export class MenuDraftService {
   private readonly logger = new Logger(MenuDraftService.name);
@@ -50,6 +57,7 @@ export class MenuDraftService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly menuVisionClient: MenuVisionClient,
+    private readonly menuDraftStore: MenuDraftStore,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly configService: ConfigService
   ) {
@@ -59,100 +67,180 @@ export class MenuDraftService {
     );
   }
 
-  async draftFromImages(
+  async createDraft(
     client: Owner,
     storeId: string,
-    buffers: Buffer[]
+    uploads: DraftImageUpload[]
   ): Promise<MenuDraftResponse> {
-    await this.assertWithinRateLimit(client.publicId);
+    const scope = buildScope(client, storeId);
 
-    // 카테고리는 프롬프트(분류명 맞춰 쓰기)와 매핑(기존 카테고리 매칭) 양쪽에 쓰인다.
-    const context = await this.loadContext(client, storeId);
-    const categoryNames = context.categories.map((category) => category.name);
+    const categories = await this.getCategories(client, storeId);
+    const categoryNames = categories.map((category) => category.name);
 
-    const images = await Promise.all(
-      buffers.map((buffer) => toOcrImage(buffer))
+    const optimizedImages = await Promise.all(
+      uploads.map((upload) => toOcrImage(upload.buffer))
     );
 
-    const extraction = await this.extractCached(images, categoryNames);
+    const createdDraftId = this.createDraftId(optimizedImages, categoryNames);
 
-    // 매핑은 캐시하지 않는다. 캐시된 인식 결과라도 카테고리·기존 메뉴는
-    // 매번 새로 읽은 값과 대조해야 중복·매칭 표시가 지금 상태를 반영한다.
-    return toMenuDraft(extraction, context);
-  }
+    const reusable = await this.assertReusable(scope, createdDraftId);
+    if (reusable?.kind === "failure") {
+      throw new UnprocessableEntityException(reusable.reason);
+    }
+    if (reusable?.kind === "draft") return reusable.draft;
 
-  /**
-   * 같은 사진 + 같은 카테고리 힌트면 모델을 다시 부르지 않는다.
-   *
-   * 카테고리 이름이 키에 들어가는 이유: 프롬프트에 실려 나가는 값이라
-   * 카테고리가 바뀌면 같은 사진이라도 인식 결과가 달라질 수 있다.
-   */
-  private async extractCached(
-    images: OcrImage[],
-    categoryNames: string[]
-  ): Promise<MenuExtraction> {
-    const key = cacheKeyOf(this.digestOf(images, categoryNames));
+    await this.assertWithinRateLimit(client.publicId);
 
-    const cached = await this.readCache(key);
-    if (cached) return cached;
-
-    const extraction = await this.menuVisionClient.extract(
-      images,
+    const extraction = await this.extract(
+      scope,
+      createdDraftId,
+      optimizedImages,
       categoryNames
     );
 
-    // 캐시 쓰기 실패로 요청을 깨뜨리지 않는다 — 비용 최적화지 정합성 요건이 아니다.
-    await this.redis
-      .set(key, JSON.stringify(extraction), "EX", CACHE_TTL_SECONDS)
-      .catch((error: unknown) => {
-        this.logger.warn(`menu draft cache write failed: ${String(error)}`);
-      });
+    const existingMenuNames = await this.getExistingMenuNames(client, storeId);
+    const draftContent = toMenuDraft(extraction, {
+      categories,
+      existingMenuNames,
+    });
 
-    return extraction;
+    const createdAt = new Date();
+    const draft = {
+      draftId: createdDraftId,
+      status: "READY" as const,
+      ...draftContent,
+      sourceImages: await this.toSourceImages(uploads, optimizedImages),
+      createdAt: createdAt.toISOString(),
+      updatedAt: createdAt.toISOString(),
+    };
+
+    try {
+      return await this.menuDraftStore.save(scope, draft, createdAt);
+    } catch (error: unknown) {
+      // 모델 비용은 이미 나갔다. 저장에 실패했다고 결과까지 버리지는 않는다 —
+      // 이번 응답은 정상이고, 다음 GET에서 없는 초안이 될 뿐이다.
+      this.logger.error(`menu draft save failed: ${String(error)}`);
+      return {
+        ...draft,
+        itemCount: draft.items.length,
+        expiresAt: new Date(
+          createdAt.getTime() + DRAFT_TTL_SECONDS * 1000
+        ).toISOString(),
+      };
+    }
   }
 
-  /**
-   * 캐시된 값도 스키마로 다시 통과시킨다.
-   * 배포 사이에 계약이 바뀌면 예전 모양이 남아 있는데, 그대로 믿으면
-   * 매핑 단계가 없는 필드를 읽는다.
-   */
-  private async readCache(key: string): Promise<MenuExtraction | null> {
-    try {
-      const raw = await this.redis.get(key);
-      if (!raw) return null;
+  async listDrafts(
+    client: Owner,
+    storeId: string
+  ): Promise<MenuDraftListResponse> {
+    const drafts = await this.guarded(() =>
+      this.menuDraftStore.list(buildScope(client, storeId))
+    );
 
-      const parsed = menuExtractionSchema.safeParse(JSON.parse(raw));
-      return parsed.success ? parsed.data : null;
+    return { drafts };
+  }
+
+  async getDraft(
+    client: Owner,
+    storeId: string,
+    draftId: string
+  ): Promise<MenuDraftResponse> {
+    const draft = await this.guarded(() =>
+      this.menuDraftStore.find(buildScope(client, storeId), draftId)
+    );
+
+    if (!draft) throw notFound();
+    return draft;
+  }
+
+  async updateDraftItems(
+    client: Owner,
+    storeId: string,
+    draftId: string,
+    payload: UpdateMenuDraftPayload
+  ): Promise<MenuDraftResponse> {
+    const context = await this.loadContext(client, storeId);
+    const items = reviseMenuDraftItems(payload.items, context);
+
+    const updated = await this.guarded(() =>
+      this.menuDraftStore.replaceItems(
+        buildScope(client, storeId),
+        draftId,
+        items
+      )
+    );
+
+    if (!updated) throw notFound();
+    return updated;
+  }
+
+  private async assertReusable(scope: DraftScope, draftId: string) {
+    try {
+      return await this.menuDraftStore.findOrFailure(scope, draftId);
     } catch (error: unknown) {
-      this.logger.warn(`menu draft cache read failed: ${String(error)}`);
+      /** Redis가 죽어 있으면 "없음"으로 취급하고 진행한다 */
+      this.logger.warn(`menu draft lookup failed: ${String(error)}`);
       return null;
     }
   }
 
-  private digestOf(images: OcrImage[], categoryNames: string[]): string {
-    const hash = createHash("sha256");
-    for (const image of images) hash.update(image.dataUrl);
-    // 카테고리 순서가 바뀌었을 뿐인데 캐시가 빗나가지 않도록 정렬해 넣는다.
-    hash.update(`\n${[...categoryNames].sort().join("\n")}`);
-    return hash.digest("hex");
+  private async extract(
+    scope: DraftScope,
+    draftId: string,
+    images: OcrImage[],
+    categoryNames: string[]
+  ): Promise<MenuExtraction> {
+    try {
+      return await this.menuVisionClient.extract(images, categoryNames);
+    } catch (error: unknown) {
+      if (error instanceof UnprocessableEntityException) {
+        await this.menuDraftStore
+          .saveFailure(scope, draftId, error.message)
+          .catch((cause: unknown) => {
+            this.logger.warn(
+              `menu draft failure record write failed: ${String(cause)}`
+            );
+          });
+      }
+      throw error;
+    }
   }
 
-  /**
-   * 고정 윈도우 카운터. 경계에서 최대 2배까지 통과할 수 있지만, 여기서 막으려는 건
-   * 정밀한 쿼터가 아니라 폭주다 — 그 정도 오차는 슬라이딩 윈도우의 복잡도만큼 값어치가 없다.
-   *
-   * 캐시 적중도 1회로 센다. 인식 이전 단계(HEIC 디코딩·리사이즈)도 CPU를 쓰므로
-   * 모델 호출 여부와 무관하게 요청 자체를 제한해야 방어선이 된다.
-   */
+  private toSourceImages(
+    uploads: DraftImageUpload[],
+    optimizedImages: OcrImage[]
+  ): Promise<MenuDraftSourceImage[]> {
+    return Promise.all(
+      optimizedImages.map(async (image, order) => ({
+        fileName: uploads[order].fileName,
+        byteSize: uploads[order].byteSize,
+        thumbnail: await toThumbnailDataUrl(image.optimized),
+      }))
+    );
+  }
+
+  private createDraftId(images: OcrImage[], categoryNames: string[]): string {
+    const createdHash = createHash("sha256");
+    for (const image of images) createdHash.update(image.dataUrl);
+    createdHash.update(`\n${[...categoryNames].sort().join("\n")}`);
+
+    return createdHash.digest("base64url").slice(0, DRAFT_ID_LENGTH);
+  }
+
   private async assertWithinRateLimit(ownerPublicId: string): Promise<void> {
     const key = rateKeyOf(ownerPublicId);
 
     let used: number;
     try {
-      used = await this.redis.incr(key);
-      if (used === 1) await this.redis.expire(key, RATE_WINDOW_SECONDS);
+      const replies = await this.redis
+        .multi()
+        .incr(key)
+        .expire(key, RATE_WINDOW_SECONDS, "NX")
+        .exec();
+
+      used = rateCountOf(replies);
     } catch (error: unknown) {
-      // Redis가 죽었다고 유료 API를 무제한 열어두지 않는다.
       this.logger.error(`menu draft rate limit unavailable: ${String(error)}`);
       throw new HttpException(
         "메뉴 인식을 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
@@ -168,28 +256,95 @@ export class MenuDraftService {
     }
   }
 
-  /** 매핑에 필요한 매장 현재 상태. 삭제된 메뉴는 중복 판정 대상이 아니다. */
+  /** 초안이 없는 것과 저장소가 죽은 것을 섞지 않는다. 사장님이 취할 행동이 다르다. */
+  private async guarded<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
+    } catch (error: unknown) {
+      if (error instanceof HttpException) throw error;
+
+      this.logger.error(`menu draft store unavailable: ${String(error)}`);
+      throw new ServiceUnavailableException(
+        "메뉴 초안을 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요."
+      );
+    }
+  }
+
   private async loadContext(
     client: Owner,
     storeId: string
   ): Promise<MenuDraftContext> {
-    const whereStore = { publicId: storeId, owner: { id: client.id } };
-
-    const [categories, menus] = await Promise.all([
-      this.prismaService.category.findMany({
-        where: { store: whereStore },
-        select: { publicId: true, name: true },
-        orderBy: { sortOrder: "asc" },
-      }),
-      this.prismaService.menu.findMany({
-        where: { deletedAt: null, category: { store: whereStore } },
-        select: { name: true },
-      }),
+    const [categories, existingMenuNames] = await Promise.all([
+      this.getCategories(client, storeId),
+      this.getExistingMenuNames(client, storeId),
     ]);
 
-    return {
-      categories,
-      existingMenuNames: menus.map((menu) => menu.name),
-    };
+    return { categories, existingMenuNames };
+  }
+
+  private getCategories(
+    client: Owner,
+    storeId: string
+  ): Promise<DraftCategoryRef[]> {
+    return this.prismaService.category.findMany({
+      where: { store: whereStoreOf(client, storeId) },
+      select: { publicId: true, name: true },
+      orderBy: { sortOrder: "asc" },
+    });
+  }
+
+  private async getExistingMenuNames(
+    client: Owner,
+    storeId: string
+  ): Promise<string[]> {
+    const menus = await this.prismaService.menu.findMany({
+      where: {
+        deletedAt: null,
+        category: { store: whereStoreOf(client, storeId) },
+      },
+      select: { name: true },
+    });
+
+    return menus.map((menu) => menu.name);
   }
 }
+
+const buildScope = (client: Owner, storeId: string): DraftScope => ({
+  ownerPublicId: client.publicId,
+  storeId,
+});
+
+const whereStoreOf = (client: Owner, storeId: string) => ({
+  publicId: storeId,
+  owner: { id: client.id },
+});
+
+const notFound = (): NotFoundException =>
+  new NotFoundException(
+    "메뉴 초안을 찾을 수 없습니다. 12시간이 지나 만료되었을 수 있습니다."
+  );
+
+/**
+ * MULTI의 응답은 명령마다 `[error, value]`다.
+ *
+ * EXPIRE 쪽 실패까지 들여다보는 이유: 그냥 넘기면 TTL 없는 카운터가 남아 그 점주는
+ * 10번을 쓴 뒤 영영 인식을 못 하게 된다. 조용히 새는 것보다 503으로 드러나는 편이 낫다.
+ */
+const rateCountOf = (replies: [Error | null, unknown][] | null): number => {
+  if (!replies || replies.length !== 2) {
+    throw new TypeError(
+      `unexpected rate limit reply: ${JSON.stringify(replies)}`
+    );
+  }
+
+  for (const [error] of replies) {
+    if (error) throw error;
+  }
+
+  const used = replies[0][1];
+  if (typeof used !== "number") {
+    throw new TypeError(`unexpected rate limit counter: ${typeof used}`);
+  }
+
+  return used;
+};
