@@ -55,6 +55,7 @@ export const bulkCreateMenusPayloadSchema = z
         BULK_MENU_MAX,
         `한 번에 최대 ${BULK_MENU_MAX}개까지 등록할 수 있습니다.`
       ),
+    draftId: draftIdSchema.optional(),
   })
   .strict();
 

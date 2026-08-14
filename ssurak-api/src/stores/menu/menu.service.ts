@@ -24,6 +24,7 @@ import {
   withReorderLock,
 } from "src/utils/helper/withReorderLock";
 import { Tx } from "src/utils/helper/transactionPipe";
+import { MenuDraftService } from "./menu-draft.service";
 
 const BULK_TX_TIMEOUT_MS = 15_000;
 
@@ -31,7 +32,8 @@ const BULK_TX_TIMEOUT_MS = 15_000;
 export class MenuService {
   constructor(
     private readonly prismaService: PrismaService,
-    private readonly storageService: StorageService
+    private readonly storageService: StorageService,
+    private readonly menuDraftService: MenuDraftService
   ) {}
 
   async createMenu(
@@ -60,11 +62,11 @@ export class MenuService {
   async bulkCreateMenus(
     client: Owner,
     storeId: string,
-    { items }: BulkCreateMenusPayloadDto
+    { items, draftId }: BulkCreateMenusPayloadDto
   ): Promise<PublicMenu[]> {
     const publicIds = items.map(() => createId());
 
-    return await this.prismaService.$transaction(
+    const bulkCreateResult = await this.prismaService.$transaction(
       async (tx) => {
         const categoryIds = await this.resolveBulkCategories(
           tx,
@@ -104,6 +106,12 @@ export class MenuService {
       },
       { timeout: BULK_TX_TIMEOUT_MS }
     );
+
+    if (draftId) {
+      await this.menuDraftService.markCommitted(client, storeId, draftId);
+    }
+
+    return bulkCreateResult;
   }
 
   /**

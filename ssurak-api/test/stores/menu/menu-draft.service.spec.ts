@@ -9,7 +9,11 @@ import {
 import { ConfigService } from "@nestjs/config";
 import type { Redis } from "ioredis";
 import type { Category, Owner } from "@ssurak/db";
-import type { MenuDraftResponse, MenuExtraction } from "@ssurak/schema";
+import type {
+  MenuDraftItem,
+  MenuDraftResponse,
+  MenuExtraction,
+} from "@ssurak/schema";
 import { PrismaService } from "src/prisma/prisma.service";
 import {
   MenuDraftService,
@@ -107,6 +111,15 @@ const usedCount = (used: number) =>
     [null, 1],
   ]);
 
+/** 저장된 초안의 항목 하나. 재사용 경로가 표시를 다시 계산하는 대상이다. */
+const DRAFT_ITEM: MenuDraftItem = {
+  name: "김치찌개",
+  price: 9000,
+  description: null,
+  category: { kind: "existing", categoryId: "cat-1", name: "찌개류" },
+  issues: [],
+};
+
 const savedDraft = (draft: StoredMenuDraft): MenuDraftResponse => ({
   ...draft,
   itemCount: draft.items.length,
@@ -135,6 +148,20 @@ beforeEach(() => {
   store.findOrFailure.mockResolvedValue(null);
   store.save.mockImplementation((_scope, draft) =>
     Promise.resolve(savedDraft(draft))
+  );
+  // 재사용 경로가 갱신한 표시를 다시 저장한다. 저장된 모양 그대로 응답에 실린다.
+  store.replaceItems.mockImplementation((_scope, draftId, items) =>
+    Promise.resolve(
+      savedDraft({
+        draftId,
+        status: "READY",
+        items,
+        unreadableCount: 0,
+        sourceImages: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+    )
   );
   store.saveFailure.mockResolvedValue(undefined);
 });
@@ -205,11 +232,11 @@ describe("MenuDraftService — 추출", () => {
 });
 
 describe("MenuDraftService — 재사용", () => {
-  it("같은 사진이면 저장된 초안을 그대로 주고 모델을 부르지 않는다", async () => {
+  it("같은 사진이면 저장된 초안을 주고 모델을 부르지 않는다", async () => {
     const existing = savedDraft({
       draftId: "AAAAAAAAAAAAAAAAAAAAAA",
       status: "READY",
-      items: [],
+      items: [DRAFT_ITEM],
       unreadableCount: 0,
       sourceImages: [],
       createdAt: new Date().toISOString(),
@@ -219,8 +246,75 @@ describe("MenuDraftService — 재사용", () => {
 
     const draft = await service.createDraft(OWNER, STORE_ID, await uploads());
 
-    expect(draft).toBe(existing);
+    expect(draft.draftId).toBe(existing.draftId);
+    expect(draft.items).toMatchObject([{ name: "김치찌개", price: 9000 }]);
     expect(vision.extract).not.toHaveBeenCalled();
+  });
+
+  it("이미 등록된 초안을 다시 올리면 중복 표시를 붙여 돌려준다", async () => {
+    // 확정까지 끝낸 초안을 표시 없이 그대로 주면, 사장님이 한 번 더 확정해 메뉴가 두 벌 생긴다.
+    prisma.menu.findMany.mockResolvedValue([{ name: "김치찌개" }] as never);
+    store.findOrFailure.mockResolvedValue({
+      kind: "draft",
+      draft: savedDraft({
+        draftId: "AAAAAAAAAAAAAAAAAAAAAA",
+        status: "COMMITTED",
+        items: [DRAFT_ITEM],
+        unreadableCount: 0,
+        sourceImages: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+    });
+
+    const draft = await service.createDraft(OWNER, STORE_ID, await uploads());
+
+    expect(draft.items[0].issues).toContain("DUPLICATE_NAME");
+    expect(vision.extract).not.toHaveBeenCalled();
+  });
+
+  it("갱신한 표시를 다시 저장한다 — 조회는 Redis 값을 그대로 내보낸다", async () => {
+    prisma.menu.findMany.mockResolvedValue([{ name: "김치찌개" }] as never);
+    store.findOrFailure.mockResolvedValue({
+      kind: "draft",
+      draft: savedDraft({
+        draftId: "AAAAAAAAAAAAAAAAAAAAAA",
+        status: "READY",
+        items: [DRAFT_ITEM],
+        unreadableCount: 0,
+        sourceImages: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+    });
+
+    await service.createDraft(OWNER, STORE_ID, await uploads());
+
+    expect(store.replaceItems).toHaveBeenCalledWith(
+      expect.anything(),
+      "AAAAAAAAAAAAAAAAAAAAAA",
+      [expect.objectContaining({ issues: ["DUPLICATE_NAME"] })]
+    );
+  });
+
+  it("표시 갱신을 저장하지 못해도 재사용 자체는 성공한다", async () => {
+    store.replaceItems.mockRejectedValue(new Error("redis down"));
+    store.findOrFailure.mockResolvedValue({
+      kind: "draft",
+      draft: savedDraft({
+        draftId: "AAAAAAAAAAAAAAAAAAAAAA",
+        status: "READY",
+        items: [DRAFT_ITEM],
+        unreadableCount: 0,
+        sourceImages: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+    });
+
+    const draft = await service.createDraft(OWNER, STORE_ID, await uploads());
+
+    expect(draft.items).toHaveLength(1);
   });
 
   it("재사용은 인식 횟수를 차감하지 않는다", async () => {

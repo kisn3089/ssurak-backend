@@ -5,6 +5,7 @@ import { Category, Menu, Owner, Prisma, Store } from "@ssurak/db";
 import { MenuService } from "src/stores/menu/menu.service";
 import { PrismaService } from "src/prisma/prisma.service";
 import { StorageService } from "src/storage/storage.service";
+import { MenuDraftService } from "src/stores/menu/menu-draft.service";
 import type { BulkCreateMenusPayloadDto } from "src/dto/request/menu.dto";
 
 const STORE_ID = "store-public-id";
@@ -80,8 +81,9 @@ const menuItem = (
 
 const prisma = mockDeep<PrismaService>();
 const storage = mockDeep<StorageService>();
+const menuDraft = mockDeep<MenuDraftService>();
 
-const service = new MenuService(prisma, storage);
+const service = new MenuService(prisma, storage, menuDraft);
 
 /**
  * PrismaPromise는 브랜드 타입이라 평범한 Promise로는 만족시킬 수 없다.

@@ -26,6 +26,7 @@ import { toOcrImage, type OcrImage } from "src/storage/image-ocr";
 import { toThumbnailDataUrl } from "src/storage/image-thumbnail";
 import { MenuVisionClient } from "./menu-vision.client";
 import {
+  recomputeMenuDraftIssues,
   reviseMenuDraftItems,
   toMenuDraft,
   type DraftCategoryRef,
@@ -87,7 +88,15 @@ export class MenuDraftService {
     if (reusable?.kind === "failure") {
       throw new UnprocessableEntityException(reusable.reason);
     }
-    if (reusable?.kind === "draft") return reusable.draft;
+    if (reusable?.kind === "draft") {
+      return await this.refreshReused(
+        scope,
+        client,
+        storeId,
+        categories,
+        reusable.draft
+      );
+    }
 
     await this.assertWithinRateLimit(client.publicId);
 
@@ -173,6 +182,46 @@ export class MenuDraftService {
 
     if (!updated) throw notFound();
     return updated;
+  }
+
+  async markCommitted(
+    client: Owner,
+    storeId: string,
+    draftId: string
+  ): Promise<void> {
+    try {
+      await this.menuDraftStore.markCommitted(
+        buildScope(client, storeId),
+        draftId
+      );
+    } catch (error: unknown) {
+      this.logger.error(`menu draft mark committed failed: ${String(error)}`);
+    }
+  }
+
+  /** 재사용하는 초안을 현재 매장 상태로 재계산한다. */
+  private async refreshReused(
+    scope: DraftScope,
+    client: Owner,
+    storeId: string,
+    categories: DraftCategoryRef[],
+    draft: MenuDraftResponse
+  ): Promise<MenuDraftResponse> {
+    const existingMenuNames = await this.getExistingMenuNames(client, storeId);
+    const items = recomputeMenuDraftIssues(draft.items, {
+      categories,
+      existingMenuNames,
+    });
+
+    // 저장에 실패해도 재사용 자체를 깨뜨리지 않는다. 이번 응답의 표시는 이미 정확하다.
+    const stored = await this.menuDraftStore
+      .replaceItems(scope, draft.draftId, items)
+      .catch((error: unknown) => {
+        this.logger.warn(`menu draft issue refresh failed: ${String(error)}`);
+        return null;
+      });
+
+    return stored ?? { ...draft, items };
   }
 
   private async assertReusable(scope: DraftScope, draftId: string) {
