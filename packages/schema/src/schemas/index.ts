@@ -28,3 +28,4 @@ export * from "./response/tableSession.response";
 export * from "./response/table.response";
 export * from "./response/cart.response";
 export * from "./response/storage.response";
+export * from "./envSchemas";
