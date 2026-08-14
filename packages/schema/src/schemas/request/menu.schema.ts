@@ -9,10 +9,6 @@ const menuIdParamsSchema = z
 export const storeIdAndMenuIdParamsSchema =
   storeIdParamsSchema.merge(menuIdParamsSchema);
 
-/**
- * 메뉴 이름·설명 제약. 메뉴판 사진 일괄 등록(bulk)도 같은 값을 써야
- * 초안 화면에서 통과한 값이 저장 단계에서 400으로 돌아오지 않는다.
- */
 export const menuNameSchema = z
   .string()
   .trim()
