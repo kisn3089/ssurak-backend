@@ -29,7 +29,7 @@ const DEFAULT_TIMEOUT_MS = 55_000;
 const SCHEMA_NAME = "menu_extraction";
 
 /**
- * 메뉴판 사진 → 구조화된 메뉴 목록. OpenAI 호출만 담당한다(얇게 유지).
+ * 메뉴판 사진 → 구조화된 메뉴 목록. OpenAI 호출만 담당한다.
  *
  * 정규화·검증은 여기서 하지 않는다 — 이 클래스는 네트워크 경계라 테스트가
  * mock에 묶이고, 그 안에 로직을 두면 로직도 같이 묶여 버린다.
@@ -46,7 +46,7 @@ export class MenuVisionClient {
   ) {
     this.model = this.configService.get<string>(
       "OPENAI_MENU_VISION_MODEL",
-      "gpt-5-mini"
+      "gpt-5.6-luna"
     );
     this.timeoutMs = this.configService.get<number>(
       "OPENAI_MENU_VISION_TIMEOUT_MS",
@@ -60,11 +60,11 @@ export class MenuVisionClient {
   ): Promise<MenuExtraction> {
     const response = await this.request(images, existingCategoryNames);
 
-    // 토큰 사용량은 응답에 싣지 않는다(사장님이 알 필요 없는 값이다).
-    // 단가 추정은 이 로그가 유일한 근거라 실패해도 남기지 않고 성공 시에만 남긴다.
     this.logger.log(
       `menu vision: model=${this.model} images=${images.length} ` +
-        `input=${response.usage?.input_tokens ?? 0} output=${response.usage?.output_tokens ?? 0}`
+        `input=${response.usage?.input_tokens ?? 0} ` +
+        `cached=${response.usage?.input_tokens_details?.cached_tokens ?? 0} ` +
+        `output=${response.usage?.output_tokens ?? 0}`
     );
 
     if (!response.output_parsed) {
@@ -92,8 +92,6 @@ export class MenuVisionClient {
                   type: "input_text",
                   text: buildMenuVisionPrompt(existingCategoryNames),
                 },
-                // detail:"high"라야 모델이 512px 타일로 쪼개 읽는다.
-                // auto로 두면 촘촘한 메뉴판의 작은 글자를 통째로 놓친다.
                 ...images.map((image) => ({
                   type: "input_image" as const,
                   image_url: image.dataUrl,
