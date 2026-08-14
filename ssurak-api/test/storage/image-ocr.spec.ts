@@ -21,9 +21,14 @@ const canvas = (width: number, height: number): Promise<Buffer> =>
     .jpeg()
     .toBuffer();
 
-/** dataUrl을 다시 디코딩해 실제로 나간 픽셀을 확인한다. */
+/**
+ * dataUrl을 다시 디코딩해 실제로 나간 픽셀과 포맷을 확인한다.
+ *
+ * 접두사를 포맷에 고정하지 않는다 — 고정해두면 인코딩을 바꿨을 때 replace가 조용히
+ * 빗나가 base64 디코딩만 깨지고, 정작 "무슨 포맷으로 나갔나"는 아무도 검증하지 않는다.
+ */
 const decode = async (dataUrl: string) => {
-  const base64 = dataUrl.replace(/^data:image\/jpeg;base64,/, "");
+  const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, "");
   return await sharp(Buffer.from(base64, "base64")).metadata();
 };
 
@@ -32,10 +37,11 @@ describe("toOcrImage", () => {
     // 메뉴 이미지 파이프라인(fit:"cover")을 재사용하면 여기서 가장자리가 잘려나가고,
     // 메뉴판에서는 그 가장자리가 곧 메뉴 항목이다.
     const image = await toOcrImage(await canvas(3000, 1000));
-    const { width, height } = await decode(image.dataUrl);
+    const { width, height, format } = await decode(image.dataUrl);
 
     expect(width).toBe(1536);
     expect(height).toBe(512);
+    expect(format).toBe("jpeg");
   });
 
   it("세로로 긴 메뉴판도 짧은 변 기준으로 잘리지 않는다", async () => {
