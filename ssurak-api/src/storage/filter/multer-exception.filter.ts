@@ -11,7 +11,7 @@ import {
 import { Response } from "express";
 import { FILE_FIELD_NAME } from "src/storage/storage.constants";
 
-interface MulterLimits {
+export interface MulterLimits {
   maxFileSizeMb: number;
   /** 이 필드로 받을 수 있는 파일 수. 메시지 문구가 갈린다. */
   maxCount: number;
@@ -38,12 +38,10 @@ const translationsOf = ({
 
   return [
     {
-      // LIMIT_FILE_SIZE. limits.fileSize 초과 시 multer가 스트리밍 도중 중단시킨다.
       match: (message) => message === "File too large",
       message: `파일 크기는 ${maxFileSizeMb}MB를 초과할 수 없습니다.`,
     },
     {
-      // LIMIT_UNEXPECTED_FILE. 'Unexpected field - <fieldname>' 형태로 필드명이 붙는다.
       match: (message) => message.startsWith("Unexpected field"),
       message: countHint,
     },
