@@ -8,7 +8,7 @@ import {
   PayloadTooLargeException,
   Type,
 } from "@nestjs/common";
-import { Response } from "express";
+import { GlobalExceptionFilter } from "src/common/filters/exception.filter";
 import { FILE_FIELD_NAME } from "src/storage/storage.constants";
 
 export interface MulterLimits {
@@ -66,29 +66,26 @@ const translationsOf = ({
  * 업로드 라우트에만 건다(@UseFilters). 전역이 아니므로 다른 라우트의 400은 영향받지 않는다.
  * 매칭되지 않는 예외(Zod 검증 실패, 컨트롤러가 직접 던진 400 등)는 원본 응답을 그대로 내보낸다.
  */
+
 export function MulterExceptionFilter(
   limits: MulterLimits
 ): Type<ExceptionFilter> {
   const translations = translationsOf(limits);
+  const globalFilter = new GlobalExceptionFilter();
 
   @Catch(PayloadTooLargeException, BadRequestException)
   class MulterExceptionFilterMixin implements ExceptionFilter {
     catch(exception: HttpException, host: ArgumentsHost) {
-      const response = host.switchToHttp().getResponse<Response>();
-      const status = exception.getStatus();
       const translated = translations.find((rule) =>
         rule.match(exception.message)
       );
 
-      if (!translated) {
-        response.status(status).json(exception.getResponse());
-        return;
-      }
+      if (!translated) return globalFilter.catch(exception, host);
 
-      response.status(status).json({
-        statusCode: status,
-        message: translated.message,
-      });
+      return globalFilter.catch(
+        new HttpException(translated.message, exception.getStatus()),
+        host
+      );
     }
   }
 
