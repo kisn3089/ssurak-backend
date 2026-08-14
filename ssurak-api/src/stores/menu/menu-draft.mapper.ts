@@ -1,5 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
 import {
+  BULK_MENU_MAX,
   CATEGORY_NAME_MAX,
   MENU_DESCRIPTION_MAX,
   MENU_NAME_MAX,
@@ -48,6 +49,8 @@ export function toMenuDraft(
   const draftItems: MenuDraftItem[] = [];
 
   for (const raw of extraction.items) {
+    if (draftItems.length >= BULK_MENU_MAX) break;
+
     const name = raw.name.normalize("NFC").trim();
     if (name.length === 0) continue;
 
@@ -122,6 +125,84 @@ export function reviseMenuDraftItems(
       issues,
     };
   });
+}
+
+const STATEFUL_ISSUES: readonly MenuDraftIssue[] = [
+  "PRICE_MISSING",
+  "CATEGORY_UNKNOWN",
+  "DUPLICATE_NAME",
+];
+
+/** 저장된 초안을 현재 매장 상태 기준으로 재계산한다. */
+export function recomputeMenuDraftIssues(
+  items: MenuDraftItem[],
+  context: MenuDraftContext
+): MenuDraftItem[] {
+  const byPublicId = new Map(
+    context.categories.map((category) => [category.publicId, category])
+  );
+  const byName = new Map(
+    context.categories.map((category) => [
+      normalizeKey(category.name),
+      category,
+    ])
+  );
+
+  const seenNames = new Set(context.existingMenuNames.map(normalizeKey));
+
+  return items.map((item) => {
+    const issues = item.issues.filter(
+      (issue) => !STATEFUL_ISSUES.includes(issue)
+    );
+
+    const category = resolveStoredCategory(
+      item.category,
+      byPublicId,
+      byName,
+      issues
+    );
+
+    if (item.price === null) issues.push("PRICE_MISSING");
+
+    const key = normalizeKey(item.name);
+    if (seenNames.has(key)) issues.push("DUPLICATE_NAME");
+    seenNames.add(key);
+
+    return { ...item, category, issues };
+  });
+}
+
+/**
+ * 추출 이후 카테고리가 지워졌다고 사진 재업로드가 404가 되면
+ * 사장님이 할 수 있는 게 없다. 붙일 곳이 없으면 "골라주세요"로 되돌린다.
+ */
+function resolveStoredCategory(
+  category: MenuDraftCategory,
+  byPublicId: Map<string, DraftCategoryRef>,
+  byName: Map<string, DraftCategoryRef>,
+  issues: MenuDraftIssue[]
+): MenuDraftCategory {
+  const matched =
+    category.kind === "existing"
+      ? (byPublicId.get(category.categoryId) ??
+        byName.get(normalizeKey(category.name)))
+      : category.kind === "new"
+        ? byName.get(normalizeKey(category.name))
+        : undefined;
+
+  if (matched) {
+    return {
+      kind: "existing",
+      categoryId: matched.publicId,
+      name: matched.name,
+    };
+  }
+
+  // 이름만 살아 있는 신규 카테고리는 확정 단계에서 만들어진다.
+  if (category.kind === "new") return category;
+
+  issues.push("CATEGORY_UNKNOWN");
+  return { kind: "unknown" };
 }
 
 /** 사장님이 고른 카테고리를 확정한다. 이름으로 보냈어도 매장에 있으면 기존 것에 붙인다. */
@@ -236,11 +317,14 @@ function resolveUnreadable(raw: number): number {
   return Math.floor(raw);
 }
 
-/**
- * 코드포인트 단위로 자른다.
- * `slice`는 UTF-16 코드유닛 기준이라 이모지가 섞이면 서로게이트 쌍이 반토막 난다.
- */
 function truncate(value: string, max: number): string {
-  const codePoints = [...value];
-  return codePoints.length <= max ? value : codePoints.slice(0, max).join("");
+  if (value.length <= max) return value;
+
+  const sliced = value.slice(0, max);
+  const last = sliced.charCodeAt(max - 1);
+
+  // BMP 밖 문자(이모지 등)는 상위 서러게이트(U+D800~U+DBFF) + 하위 서러게이트(U+DC00~U+DFFF)
+  // 두 코드유닛으로 저장된다. 경계가 그 사이에 떨어지면 상위 짝만 남아 깨진 글자가 되므로
+  // 반쪽을 떼어낸다 — 이 경우만 결과가 max-1이 된다.
+  return last >= 0xd800 && last <= 0xdbff ? sliced.slice(0, -1) : sliced;
 }

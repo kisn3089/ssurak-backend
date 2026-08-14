@@ -89,13 +89,16 @@ export class MenuDraftStore {
       .exec();
 
     const fields = replyAt<Record<string, string>>(replies, 0) ?? {};
-    const pttl = replyAt<number>(replies, 1) ?? -2;
     const failure = replyAt<string>(replies, 2);
+    const pttl = replyAt<number>(replies, 1) ?? -2;
 
     const draft = this.toDraft(draftId, fields, pttl);
     if (draft) {
       await this.extendExpires(scope, draftId);
-      return { kind: "draft", draft };
+      return {
+        kind: "draft",
+        draft: { ...draft, expiresAt: expiresAtFrom(DRAFT_TTL_SECONDS * 1000) },
+      };
     }
 
     if (failure) return { kind: "failure", reason: failure };
@@ -156,13 +159,15 @@ export class MenuDraftStore {
     const key = draftKeyOf(scope, draft.draftId);
     const indexKey = indexKeyOf(scope);
 
-    await this.redis
-      .multi()
-      .hset(key, this.toFields(draft))
-      .expire(key, DRAFT_TTL_SECONDS)
-      .zadd(indexKey, createdAt.getTime(), draft.draftId)
-      .expire(indexKey, DRAFT_TTL_SECONDS)
-      .exec();
+    assertExecuted(
+      await this.redis
+        .multi()
+        .hset(key, this.toFields(draft))
+        .expire(key, DRAFT_TTL_SECONDS)
+        .zadd(indexKey, createdAt.getTime(), draft.draftId)
+        .expire(indexKey, DRAFT_TTL_SECONDS)
+        .exec()
+    );
 
     return {
       ...draft,
@@ -217,6 +222,18 @@ export class MenuDraftStore {
       .expire(draftKeyOf(scope, draftId), DRAFT_TTL_SECONDS)
       .expire(indexKeyOf(scope), DRAFT_TTL_SECONDS)
       .exec();
+  }
+
+  async markCommitted(scope: DraftScope, draftId: string) {
+    const key = draftKeyOf(scope, draftId);
+    if ((await this.redis.exists(key)) === 0) return null;
+
+    const updatedAt = new Date().toISOString();
+
+    await this.redis.hset(key, {
+      [FIELDS.status]: "COMMITTED",
+      [FIELDS.updatedAt]: updatedAt,
+    });
   }
 
   private toFields(draft: StoredMenuDraft): Record<string, string> {
@@ -293,6 +310,18 @@ const jsonArray = <T>(item: z.ZodType<T>) =>
 
 const expiresAtFrom = (pttlMs: number): string =>
   new Date(Date.now() + pttlMs).toISOString();
+
+/**
+ * MULTI가 실제로 다 쓰였는지 확인한다.
+ * null은 트랜잭션이 통째로 버려졌다는 뜻이다(WATCH 충돌).
+ */
+const assertExecuted = (replies: [Error | null, unknown][] | null): void => {
+  if (!replies) throw new Error("redis transaction aborted");
+
+  for (const [error] of replies) {
+    if (error) throw error;
+  }
+};
 
 /** ioredis 파이프라인 응답은 `[error, value]`의 배열이다. */
 const replyAt = <T>(

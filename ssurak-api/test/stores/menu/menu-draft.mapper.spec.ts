@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { NotFoundException } from "@nestjs/common";
-import { PRICE_MAX, type MenuExtraction } from "@ssurak/schema";
 import {
+  PRICE_MAX,
+  type MenuDraftItem,
+  type MenuExtraction,
+} from "@ssurak/schema";
+import {
+  recomputeMenuDraftIssues,
   reviseMenuDraftItems,
   toMenuDraft,
   type MenuDraftContext,
@@ -98,13 +103,19 @@ describe("toMenuDraft — 길이 제약", () => {
     expect(items[0].issues).toContain("NAME_TRUNCATED");
   });
 
+  /**
+   * 자르는 기준은 zod `.max()`와 같은 UTF-16 코드유닛이어야 한다. 코드포인트로 세면
+   * 이모지 30개(=60 코드유닛)가 통과해 확정 단계에서 400으로 돌아온다.
+   * 이모지 하나가 2 코드유닛이므로 30 코드유닛 = 이모지 15개다.
+   */
   it("이모지가 섞인 이름을 잘라도 서로게이트 쌍이 깨지지 않는다", () => {
     const { items } = toMenuDraft(
       extraction([item({ name: "🍲".repeat(35) })]),
       context()
     );
 
-    expect([...items[0].name]).toHaveLength(30);
+    expect(items[0].name.length).toBeLessThanOrEqual(30);
+    expect([...items[0].name]).toHaveLength(15);
     // 반토막 난 서로게이트는 U+FFFD로 복원되지 않고 깨진 코드유닛으로 남는다.
     expect(items[0].name).not.toContain("�");
   });
@@ -344,5 +355,80 @@ describe("toMenuDraft — unreadableCount", () => {
 
     expect(draft.items).toEqual([]);
     expect(draft.unreadableCount).toBe(5);
+  });
+});
+
+describe("recomputeMenuDraftIssues", () => {
+  const stored = (
+    overrides: Partial<MenuDraftItem> = {}
+  ): MenuDraftItem => ({
+    name: "김치찌개",
+    price: 9000,
+    description: null,
+    category: { kind: "unknown" },
+    issues: [],
+    ...overrides,
+  });
+
+  it("매장에 이미 있는 이름이면 중복 표시를 붙인다", () => {
+    // 확정을 마친 초안을 표시 없이 그대로 주면 사장님이 한 번 더 확정한다.
+    const [item] = recomputeMenuDraftIssues(
+      [stored({ category: { kind: "new", name: "찌개류" } })],
+      context({ existingMenuNames: ["김치찌개"] })
+    );
+
+    expect(item.issues).toContain("DUPLICATE_NAME");
+  });
+
+  it("확정하며 생긴 카테고리에는 새로 만들지 않고 붙는다", () => {
+    const [item] = recomputeMenuDraftIssues(
+      [stored({ category: { kind: "new", name: "찌개류" } })],
+      context({ categories: [{ publicId: "cat-1", name: "찌개류" }] })
+    );
+
+    expect(item.category).toEqual({
+      kind: "existing",
+      categoryId: "cat-1",
+      name: "찌개류",
+    });
+  });
+
+  it("그 사이 지워진 카테고리는 404가 아니라 미정으로 되돌린다", () => {
+    // 사진 재업로드가 카테고리 삭제 때문에 실패하면 사장님이 할 수 있는 게 없다.
+    const [item] = recomputeMenuDraftIssues(
+      [
+        stored({
+          category: { kind: "existing", categoryId: "gone", name: "사라짐" },
+        }),
+      ],
+      context()
+    );
+
+    expect(item.category).toEqual({ kind: "unknown" });
+    expect(item.issues).toContain("CATEGORY_UNKNOWN");
+  });
+
+  it("서버가 값을 손댔다는 기록은 지우지 않는다", () => {
+    // NAME_TRUNCATED는 지금 값만 보고 되살릴 수 없다. 사장님이 아직 확인하지 않은 표시다.
+    const [item] = recomputeMenuDraftIssues(
+      [
+        stored({
+          issues: ["NAME_TRUNCATED", "PRICE_ROUNDED", "CATEGORY_UNKNOWN"],
+          category: { kind: "existing", categoryId: "cat-1", name: "찌개류" },
+        }),
+      ],
+      context({ categories: [{ publicId: "cat-1", name: "찌개류" }] })
+    );
+
+    expect(item.issues).toEqual(["NAME_TRUNCATED", "PRICE_ROUNDED"]);
+  });
+
+  it("값 자체는 건드리지 않는다 — 사장님이 PATCH로 고쳐둔 내용이다", () => {
+    const [item] = recomputeMenuDraftIssues(
+      [stored({ name: "직접 고친 이름", price: 12_000 })],
+      context()
+    );
+
+    expect(item).toMatchObject({ name: "직접 고친 이름", price: 12_000 });
   });
 });
