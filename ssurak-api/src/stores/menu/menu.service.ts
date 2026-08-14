@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { createId } from "@paralleldrive/cuid2";
 import { PrismaService } from "src/prisma/prisma.service";
 import { Owner, Prisma, PublicMenu } from "@ssurak/db";
@@ -25,12 +25,6 @@ import {
 } from "src/utils/helper/withReorderLock";
 import { Tx } from "src/utils/helper/transactionPipe";
 
-/**
- * 일괄 등록 트랜잭션 예산.
- *
- * Prisma 기본값 5초로는 부족하다 — 최대 100개 항목에 카테고리 upsert가 앞서고,
- * 예산을 넘기면 P2028이 전역 필터에서 원인 불명의 400으로 나간다.
- */
 const BULK_TX_TIMEOUT_MS = 15_000;
 
 @Injectable()
@@ -40,10 +34,6 @@ export class MenuService {
     private readonly storageService: StorageService
   ) {}
 
-  /**
-   * 메뉴는 카테고리 안 맨 뒤에 붙는다. 동시 생성으로 sortOrder가 겹쳐도 목록은
-   * id 타이브레이크로 결정적이고, 다음 재정렬에서 전부 다시 매겨진다.
-   */
   async createMenu(
     client: Owner,
     storeId: string,
@@ -52,7 +42,6 @@ export class MenuService {
     const { categoryId, imageKey, ...rest } = createPayload;
     await this.assertCategoryBelongsToStore(client, categoryId, storeId);
 
-    // S3 승격은 트랜잭션 밖에 둔다 — 네트워크 왕복을 트랜잭션 시간 예산에 태우지 않는다.
     const promotedKey = imageKey
       ? await this.storageService.promoteMenuImage(imageKey, client.publicId)
       : null;
@@ -68,24 +57,11 @@ export class MenuService {
     });
   }
 
-  /**
-   * 메뉴판 사진 초안을 확정해 한 번에 등록한다.
-   *
-   * 개별 생성 API를 N번 호출하는 것과 다른 점은 원자성이다 — 30개 중 17번째가
-   * 실패하면 절반만 등록된 상태로 남고, 사장님은 어디까지 들어갔는지 세어가며
-   * 나머지를 다시 넣어야 한다. 전부 되거나 전부 안 되는 편이 복구 가능하다.
-   *
-   * 초안에는 이미지가 없으므로 S3 승격(promoteMenuImage)이 없다 —
-   * 개별 생성과 달리 트랜잭션 안에 네트워크 왕복이 끼지 않는다.
-   */
   async bulkCreateMenus(
     client: Owner,
     storeId: string,
     { items }: BulkCreateMenusPayloadDto
   ): Promise<PublicMenu[]> {
-    // publicId를 DB 기본값에 맡기지 않고 여기서 만든다.
-    // createMany는 생성된 행을 돌려주지 않으므로, 방금 넣은 것만 정확히 되읽으려면
-    // 키를 미리 알고 있어야 한다(이름으로 되찾으면 동명 메뉴와 구분되지 않는다).
     const publicIds = items.map(() => createId());
 
     return await this.prismaService.$transaction(
@@ -148,31 +124,40 @@ export class MenuService {
       select: { id: true },
     });
 
-    const byPublicId = new Map<string, bigint>();
-    const byName = new Map<string, bigint>();
+    const existingCategories = await tx.category.findMany({
+      where: { storeId: store.id },
+      select: { id: true, publicId: true, name: true, sortOrder: true },
+    });
+
+    const byPublicId = new Map(
+      existingCategories.map((category) => [category.publicId, category.id])
+    );
+    const byName = new Map(
+      existingCategories.map((category) => [category.name, category.id])
+    );
+    let sortOrder = existingCategories.reduce(
+      (max, category) => Math.max(max, category.sortOrder),
+      0
+    );
 
     for (const publicId of new Set(
       items.flatMap((item) => (item.categoryId ? [item.categoryId] : []))
     )) {
-      // 남의 매장 카테고리 ID를 실어 보내면 여기서 걸린다(가드는 매장까지만 본다).
-      const category = await tx.category.findFirstOrThrow({
-        where: { publicId, storeId: store.id },
-        select: { id: true },
-      });
-      byPublicId.set(publicId, category.id);
+      if (!byPublicId.has(publicId)) {
+        throw new NotFoundException(`카테고리 ${publicId}를 찾을 수 없습니다.`);
+      }
     }
 
     for (const name of new Set(
       items.flatMap((item) => (item.categoryName ? [item.categoryName] : []))
     )) {
+      if (byName.has(name)) continue;
+
+      sortOrder += SORT_ORDER_STEP;
       const category = await tx.category.upsert({
         where: { storeId_name: { storeId: store.id, name } },
         update: {},
-        create: {
-          name,
-          sortOrder: await this.nextCategorySortOrder(tx, store.id),
-          store: { connect: { id: store.id } },
-        },
+        create: { name, sortOrder, store: { connect: { id: store.id } } },
         select: { id: true },
       });
       byName.set(name, category.id);
@@ -183,7 +168,6 @@ export class MenuService {
         ? byPublicId.get(item.categoryId)
         : byName.get(item.categoryName ?? "");
 
-      // 스키마가 categoryId·categoryName 중 정확히 하나를 강제하므로 도달하지 않는다.
       if (resolved === undefined) {
         throw new Error("bulk category resolution missed an item");
       }
@@ -191,11 +175,6 @@ export class MenuService {
     });
   }
 
-  /**
-   * 항목별 sortOrder를 카테고리 안 맨 뒤에 이어 붙인다.
-   * 카테고리마다 현재 최대값을 한 번만 읽고 메모리에서 증가시킨다 —
-   * 항목마다 다시 읽으면 같은 값이 반복돼 전부 겹친다.
-   */
   private async nextSortOrders(
     tx: Tx,
     categoryIds: bigint[]
@@ -216,20 +195,6 @@ export class MenuService {
       cursors.set(categoryId, next);
       return next;
     });
-  }
-
-  /** 새 카테고리는 매장의 마지막 카테고리 뒤에 붙는다. */
-  private async nextCategorySortOrder(
-    tx: Tx,
-    storeId: bigint
-  ): Promise<number> {
-    const last = await tx.category.findFirst({
-      where: { storeId },
-      orderBy: { sortOrder: "desc" },
-      select: { sortOrder: true },
-    });
-
-    return (last?.sortOrder ?? 0) + SORT_ORDER_STEP;
   }
 
   async getMenuUnique(

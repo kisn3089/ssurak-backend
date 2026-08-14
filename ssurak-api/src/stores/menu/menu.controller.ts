@@ -77,10 +77,6 @@ export class MenuController {
     return PublicMenuDto.schema.parse(this.menuImageService.toView(created));
   }
 
-  /**
-   * 메뉴판 사진 초안 확정용 일괄 등록.
-   * `:menuId` 라우트와 메서드가 달라 충돌하지 않지만, 생성 계열끼리 모아 둔다.
-   */
   @Post("bulk")
   @UseGuards(
     ZodValidation({
