@@ -66,6 +66,16 @@ const SUMMARY_FIELDS = [
 const isoSchema = z.string().datetime();
 const countSchema = z.coerce.number().int().min(0);
 
+/**
+ * Redis 응답을 좁히는 스키마들. 모양이 어긋나면 던지는 대신 "없음"으로 떨어뜨린다 —
+ * 초안 하나가 이상하다고 목록 전체가 500이 되면 안 되고, 어차피 뒤에서 걸러진다.
+ */
+const hashReply = z.record(z.string(), z.string()).catch({});
+const stringReply = z.string().nullable().catch(null);
+const valuesReply = z.array(z.string().nullable()).catch([]);
+/** PTTL은 키가 없으면 -2, 만료가 없으면 -1. 못 읽은 값도 -2(없음)로 본다. */
+const pttlReply = z.number().catch(-2);
+
 /** 살아 있는 초안에만 쓰고 만료를 다시 건다. 키가 없으면 아무것도 하지 않고 0. */
 const WRITE_IF_ALIVE = `
 if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
@@ -97,9 +107,9 @@ export class MenuDraftStore {
       .get(failureKeyOf(scope, draftId))
       .exec();
 
-    const fields = replyAt<Record<string, string>>(replies, 0) ?? {};
-    const failure = replyAt<string>(replies, 2);
-    const pttl = replyAt<number>(replies, 1) ?? -2;
+    const fields = hashReply.parse(replyAt(replies, 0));
+    const failure = stringReply.parse(replyAt(replies, 2));
+    const pttl = pttlReply.parse(replyAt(replies, 1));
 
     const draft = this.toDraft(draftId, fields, pttl);
     if (draft) {
@@ -140,8 +150,8 @@ export class MenuDraftStore {
     const expired: string[] = [];
 
     draftIds.forEach((draftId, order) => {
-      const values = replyAt<(string | null)[]>(replies, order * 2) ?? [];
-      const pttl = replyAt<number>(replies, order * 2 + 1) ?? -2;
+      const values = valuesReply.parse(replyAt(replies, order * 2));
+      const pttl = pttlReply.parse(replyAt(replies, order * 2 + 1));
 
       const summary = this.toSummary(
         draftId,
@@ -336,14 +346,17 @@ const assertExecuted = (replies: [Error | null, unknown][] | null): void => {
   }
 };
 
-/** ioredis 파이프라인 응답은 `[error, value]`의 배열이다. */
-const replyAt = <T>(
+/**
+ * ioredis 파이프라인 응답은 `[error, value]`의 배열이다.
+ * 값의 모양은 Redis가 정하는 것이라 여기서는 `unknown`으로 두고, 읽는 쪽에서 좁힌다.
+ */
+const replyAt = (
   replies: [Error | null, unknown][] | null,
   index: number
-): T | null => {
+): unknown => {
   const reply = replies?.[index];
   if (!reply || reply[0]) return null;
-  return (reply[1] as T) ?? null;
+  return reply[1] ?? null;
 };
 
 const zip = (

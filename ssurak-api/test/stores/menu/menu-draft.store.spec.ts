@@ -120,6 +120,18 @@ describe("MenuDraftStore — 조회", () => {
     });
   });
 
+  it("PTTL이 숫자가 아니면 만료 시각을 지어내지 않는다", async () => {
+    // 문자열 "60000"은 `<= 0` 비교를 통과해 버린다. 검증 없이 number로 믿으면
+    // Date.now() + "60000"이 문자열로 붙어 Invalid Date가 되고 toISOString이 터진다.
+    pipeline.exec.mockResolvedValue([
+      [null, fields()],
+      [null, "60000"],
+      [null, null],
+    ]);
+
+    expect(await store.findOrFailure(SCOPE, DRAFT_ID)).toBeNull();
+  });
+
   it("계약이 바뀌어 모양이 안 맞는 값은 없는 것으로 친다", async () => {
     pipeline.exec.mockResolvedValue([
       [null, fields({ items: "not-json" })],
@@ -169,6 +181,19 @@ describe("MenuDraftStore — 목록", () => {
       INDEX_KEY,
       "BBBBBBBBBBBBBBBBBBBBBB"
     );
+  });
+
+  it("한 초안의 응답이 깨져도 나머지 목록은 살린다", async () => {
+    pipeline.exec.mockResolvedValue([
+      [null, ["READY", "1", "[]", NOW, NOW]],
+      [null, 60_000],
+      [null, "배열이 아님"],
+      [null, null],
+    ]);
+
+    const drafts = await store.list(SCOPE);
+
+    expect(drafts.map((draft) => draft.draftId)).toEqual([DRAFT_ID]);
   });
 
   it("인덱스가 비어 있으면 Redis를 더 두드리지 않는다", async () => {
