@@ -38,9 +38,6 @@ import {
   type DraftScope,
 } from "./menu-draft.store";
 
-const DEFAULT_HOURLY_LIMIT = 10;
-const RATE_WINDOW_SECONDS = 60 * 60; // 1시간
-
 const rateKeyOf = (ownerPublicId: string): string =>
   `menu-draft:rate:${ownerPublicId}`;
 
@@ -53,7 +50,8 @@ export interface DraftImageUpload {
 @Injectable()
 export class MenuDraftService {
   private readonly logger = new Logger(MenuDraftService.name);
-  private readonly hourlyLimit: number;
+  private readonly rateLimit: number;
+  private readonly rateWindowHours: number;
 
   constructor(
     private readonly prismaService: PrismaService,
@@ -62,9 +60,12 @@ export class MenuDraftService {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly configService: ConfigService
   ) {
-    this.hourlyLimit = this.configService.get<number>(
-      "MENU_DRAFT_HOURLY_LIMIT",
-      DEFAULT_HOURLY_LIMIT
+    // 기본값은 envSchemas가 쥐고 있다. 여기서 또 fallback을 두면 둘이 갈라진다.
+    this.rateLimit = this.configService.getOrThrow<number>(
+      "MENU_DRAFT_RATE_LIMIT"
+    );
+    this.rateWindowHours = this.configService.getOrThrow<number>(
+      "MENU_DRAFT_RATE_WINDOW_HOURS"
     );
   }
 
@@ -285,7 +286,7 @@ export class MenuDraftService {
       const replies = await this.redis
         .multi()
         .incr(key)
-        .expire(key, RATE_WINDOW_SECONDS, "NX")
+        .expire(key, this.rateWindowHours * 60 * 60, "NX")
         .exec();
 
       used = rateCountOf(replies);
@@ -297,9 +298,9 @@ export class MenuDraftService {
       );
     }
 
-    if (used > this.hourlyLimit) {
+    if (used > this.rateLimit) {
       throw new HttpException(
-        `메뉴 인식은 1시간에 ${this.hourlyLimit}번까지 사용할 수 있습니다. 잠시 후 다시 시도해 주세요.`,
+        `메뉴 인식은 ${this.rateWindowHours}시간에 ${this.rateLimit}번까지 사용할 수 있습니다. 잠시 후 다시 시도해 주세요.`,
         HttpStatus.TOO_MANY_REQUESTS
       );
     }
@@ -377,7 +378,7 @@ const notFound = (): NotFoundException =>
  * MULTI의 응답은 명령마다 `[error, value]`다.
  *
  * EXPIRE 쪽 실패까지 들여다보는 이유: 그냥 넘기면 TTL 없는 카운터가 남아 그 점주는
- * 10번을 쓴 뒤 영영 인식을 못 하게 된다. 조용히 새는 것보다 503으로 드러나는 편이 낫다.
+ * 상한을 채운 뒤 영영 인식을 못 하게 된다. 조용히 새는 것보다 503으로 드러나는 편이 낫다.
  */
 const rateCountOf = (replies: [Error | null, unknown][] | null): number => {
   if (!replies || replies.length !== 2) {

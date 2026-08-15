@@ -27,7 +27,8 @@ import { MenuVisionClient } from "src/stores/menu/menu-vision.client";
 import sharp from "sharp";
 
 const STORE_ID = "store-public-id";
-const HOURLY_LIMIT = 10;
+const RATE_LIMIT = 15;
+const RATE_WINDOW_HOURS = 8;
 
 const OWNER: Owner = {
   id: 7n,
@@ -133,7 +134,9 @@ let service: MenuDraftService;
 beforeEach(() => {
   vi.clearAllMocks();
 
-  config.get.mockReturnValue(HOURLY_LIMIT);
+  config.getOrThrow.mockImplementation((key: string) =>
+    key === "MENU_DRAFT_RATE_LIMIT" ? RATE_LIMIT : RATE_WINDOW_HOURS
+  );
   service = new MenuDraftService(prisma, vision, store, redis, config);
 
   transaction = rateLimitTransaction();
@@ -467,7 +470,7 @@ describe("MenuDraftService — 조회·수정", () => {
 
 describe("MenuDraftService — 레이트리밋", () => {
   it("상한을 넘으면 429로 거절하고 모델을 부르지 않는다", async () => {
-    usedCount(HOURLY_LIMIT + 1);
+    usedCount(RATE_LIMIT + 1);
 
     await expect(
       service.createDraft(OWNER, STORE_ID, await uploads())
@@ -477,7 +480,7 @@ describe("MenuDraftService — 레이트리밋", () => {
   });
 
   it("상한과 같은 횟수까지는 통과한다", async () => {
-    usedCount(HOURLY_LIMIT);
+    usedCount(RATE_LIMIT);
 
     await expect(
       service.createDraft(OWNER, STORE_ID, await uploads())
@@ -498,7 +501,7 @@ describe("MenuDraftService — 레이트리밋", () => {
     // NX가 빠지면 매 요청이 만료를 미뤄 창이 영원히 안 닫힌다(슬라이딩이 돼 버린다).
     expect(transaction.expire).toHaveBeenCalledWith(
       `menu-draft:rate:${OWNER.publicId}`,
-      60 * 60,
+      RATE_WINDOW_HOURS * 60 * 60,
       "NX"
     );
   });
