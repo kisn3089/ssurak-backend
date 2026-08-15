@@ -104,6 +104,11 @@ export const menuDraftListResponseSchema = z.object({
     .datetime()
     .nullable()
     .describe("횟수가 초기화되는 시각. null이면 아직 쓰지 않았거나 조회 실패"),
+  rateLimit: z
+    .number()
+    .int()
+    .nonnegative()
+    .describe("점주 기준 초안 추출 가능 최대 횟수."),
 });
 
 export type MenuDraftListResponse = z.infer<typeof menuDraftListResponseSchema>;

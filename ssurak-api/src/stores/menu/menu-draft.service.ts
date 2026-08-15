@@ -45,7 +45,10 @@ const rateKeyOf = (ownerPublicId: string): string =>
 /** TTL이 돌려주는 특수값. -2는 키 없음, -1은 만료 없음. */
 const TTL_NO_EXPIRY = -1;
 
-type MenuDraftRateState = Pick<MenuDraftListResponse, "remaining" | "resetAt">;
+type MenuDraftRateState = Pick<
+  MenuDraftListResponse,
+  "remaining" | "resetAt" | "rateLimit"
+>;
 
 export interface DraftImageUpload {
   buffer: Buffer;
@@ -241,6 +244,7 @@ export class MenuDraftService {
       }
 
       return {
+        rateLimit: this.rateLimit,
         remaining: Math.max(this.rateLimit - used, 0),
         resetAt:
           ttlSeconds > 0
@@ -249,7 +253,8 @@ export class MenuDraftService {
       };
     } catch (error: unknown) {
       this.logger.warn(`menu draft rate state unavailable: ${String(error)}`);
-      return { remaining: null, resetAt: null };
+      // rateLimit은 설정값이라 Redis 조회가 실패해도 그대로 내보낸다.
+      return { remaining: null, resetAt: null, rateLimit: this.rateLimit };
     }
   }
 

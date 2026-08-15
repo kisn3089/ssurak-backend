@@ -19,7 +19,12 @@ import { MenuService } from "src/stores/menu/menu.service";
  */
 describe("메뉴 초안 라우팅", () => {
   // 컨트롤러가 응답을 스키마로 parse하므로 목도 필드를 다 채워야 200이 난다.
-  const listResponse = { drafts: [], remaining: 15, resetAt: null };
+  const listResponse = {
+    drafts: [],
+    remaining: 15,
+    resetAt: null,
+    rateLimit: 15,
+  };
   const listDrafts = vi.fn().mockResolvedValue(listResponse);
   const menuUnique = vi.fn();
 
