@@ -182,9 +182,54 @@ describe("MenuDraftStore — 목록", () => {
 describe("MenuDraftStore — 수정", () => {
   it("만료된 초안을 수정으로 되살리지 않는다", async () => {
     // HSET은 없는 키를 만들어 버린다 — 항목만 있고 사진·추출 정보가 없는 반쪽이 남는다.
-    redis.exists.mockResolvedValue(0);
+    redis.eval.mockResolvedValue(0);
 
     expect(await store.replaceItems(SCOPE, DRAFT_ID, [ITEM])).toBeNull();
-    expect(redis.multi).not.toHaveBeenCalled();
+    expect(redis.pipeline).not.toHaveBeenCalled();
+  });
+
+  it("확인과 쓰기를 한 번에 실행해 만료 경합을 막는다", async () => {
+    // exists → hset을 따로 보내면 그 사이에 TTL이 지날 수 있다.
+    redis.eval.mockResolvedValue(1);
+    pipeline.exec.mockResolvedValue([
+      [null, fields()],
+      [null, 60_000],
+      [null, null],
+    ]);
+
+    await store.replaceItems(SCOPE, DRAFT_ID, [ITEM]);
+
+    const [script, keyCount, draftKey, indexKey, ttl, ...pairs] =
+      redis.eval.mock.calls[0];
+    expect(script).toContain("EXISTS");
+    expect([keyCount, draftKey, indexKey, ttl]).toEqual([
+      2,
+      DRAFT_KEY,
+      INDEX_KEY,
+      String(DRAFT_TTL_SECONDS),
+    ]);
+    expect(pairs).toContain("items");
+    expect(redis.exists).not.toHaveBeenCalled();
+  });
+
+  it("만료된 초안을 커밋 표시로 되살리지 않는다", async () => {
+    // 이 경로는 expire가 없었다 — 되살아나면 TTL 없는 키가 영영 남는다.
+    redis.eval.mockResolvedValue(0);
+
+    await store.markCommitted(SCOPE, DRAFT_ID);
+
+    expect(redis.hset).not.toHaveBeenCalled();
+  });
+
+  it("커밋된 초안도 같은 경로로 만료를 다시 건다", async () => {
+    redis.eval.mockResolvedValue(1);
+
+    await store.markCommitted(SCOPE, DRAFT_ID);
+
+    const [, , , , ttl, ...pairs] = redis.eval.mock.calls[0];
+    expect(ttl).toBe(String(DRAFT_TTL_SECONDS));
+    expect(pairs).toEqual(
+      expect.arrayContaining(["status", "COMMITTED", "updatedAt"])
+    );
   });
 });

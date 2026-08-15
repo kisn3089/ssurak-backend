@@ -66,6 +66,15 @@ const SUMMARY_FIELDS = [
 const isoSchema = z.string().datetime();
 const countSchema = z.coerce.number().int().min(0);
 
+/** 살아 있는 초안에만 쓰고 만료를 다시 건다. 키가 없으면 아무것도 하지 않고 0. */
+const WRITE_IF_ALIVE = `
+if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
+redis.call('HSET', KEYS[1], unpack(ARGV, 2))
+redis.call('EXPIRE', KEYS[1], ARGV[1])
+redis.call('EXPIRE', KEYS[2], ARGV[1])
+return 1
+`;
+
 /** 메뉴 초안의 Redis 계층 */
 @Injectable()
 export class MenuDraftStore {
@@ -181,21 +190,12 @@ export class MenuDraftStore {
     draftId: string,
     items: MenuDraftItem[]
   ): Promise<MenuDraftResponse | null> {
-    const key = draftKeyOf(scope, draftId);
-    if ((await this.redis.exists(key)) === 0) return null;
-
-    const updatedAt = new Date().toISOString();
-
-    await this.redis
-      .multi()
-      .hset(key, {
-        [FIELDS.items]: JSON.stringify(items),
-        [FIELDS.itemCount]: String(items.length),
-        [FIELDS.updatedAt]: updatedAt,
-      })
-      .expire(key, DRAFT_TTL_SECONDS)
-      .expire(indexKeyOf(scope), DRAFT_TTL_SECONDS)
-      .exec();
+    const written = await this.writeIfAlive(scope, draftId, {
+      [FIELDS.items]: JSON.stringify(items),
+      [FIELDS.itemCount]: String(items.length),
+      [FIELDS.updatedAt]: new Date().toISOString(),
+    });
+    if (!written) return null;
 
     return this.find(scope, draftId);
   }
@@ -225,13 +225,28 @@ export class MenuDraftStore {
   }
 
   async markCommitted(scope: DraftScope, draftId: string): Promise<void> {
-    const key = draftKeyOf(scope, draftId);
-    if ((await this.redis.exists(key)) === 0) return;
-
-    await this.redis.hset(key, {
+    await this.writeIfAlive(scope, draftId, {
       [FIELDS.status]: "COMMITTED",
       [FIELDS.updatedAt]: new Date().toISOString(),
     });
+  }
+
+  /** 초안이 아직 살아 있을 때만 필드를 덮어쓴다. 실제로 썼는지를 돌려준다. */
+  private async writeIfAlive(
+    scope: DraftScope,
+    draftId: string,
+    fields: Record<string, string>
+  ): Promise<boolean> {
+    const written = await this.redis.eval(
+      WRITE_IF_ALIVE,
+      2,
+      draftKeyOf(scope, draftId),
+      indexKeyOf(scope),
+      String(DRAFT_TTL_SECONDS),
+      ...Object.entries(fields).flat()
+    );
+
+    return written === 1;
   }
 
   private toFields(draft: StoredMenuDraft): Record<string, string> {
