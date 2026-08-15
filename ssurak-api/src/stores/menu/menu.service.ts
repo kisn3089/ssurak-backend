@@ -24,6 +24,10 @@ import {
   withReorderLock,
 } from "src/utils/helper/withReorderLock";
 import { Tx } from "src/utils/helper/transactionPipe";
+import {
+  normalizeNameKey,
+  normalizeNameValue,
+} from "src/utils/helper/normalizeName";
 import { MenuDraftStore } from "./menu-draft.store";
 
 const BULK_TX_TIMEOUT_MS = 15_000;
@@ -147,7 +151,10 @@ export class MenuService {
       existingCategories.map((category) => [category.publicId, category.id])
     );
     const byName = new Map(
-      existingCategories.map((category) => [category.name, category.id])
+      existingCategories.map((category) => [
+        normalizeNameKey(category.name),
+        category.id,
+      ])
     );
     let sortOrder = existingCategories.reduce(
       (max, category) => Math.max(max, category.sortOrder),
@@ -162,11 +169,20 @@ export class MenuService {
       }
     }
 
-    for (const name of new Set(
-      items.flatMap((item) => (item.categoryName ? [item.categoryName] : []))
-    )) {
-      if (byName.has(name)) continue;
+    // 정규화 키로 접어 순회한다 — "사이드 메뉴"와 "사이드메뉴"가 한 요청에 같이 와도
+    // 카테고리는 하나만 생기고, DB에는 먼저 나온 원문 표기로 들어간다.
+    const newNames = new Map<string, string>();
+    for (const item of items) {
+      if (item.categoryName === undefined) continue;
 
+      const name = normalizeNameValue(item.categoryName);
+      const key = normalizeNameKey(name);
+      if (byName.has(key) || newNames.has(key)) continue;
+
+      newNames.set(key, name);
+    }
+
+    for (const [key, name] of newNames) {
       sortOrder += SORT_ORDER_STEP;
       const category = await tx.category.upsert({
         where: { storeId_name: { storeId: store.id, name } },
@@ -174,13 +190,13 @@ export class MenuService {
         create: { name, sortOrder, store: { connect: { id: store.id } } },
         select: { id: true },
       });
-      byName.set(name, category.id);
+      byName.set(key, category.id);
     }
 
     return items.map((item) => {
       const resolved = item.categoryId
         ? byPublicId.get(item.categoryId)
-        : byName.get(item.categoryName ?? "");
+        : byName.get(normalizeNameKey(item.categoryName ?? ""));
 
       if (resolved === undefined) {
         throw new Error("bulk category resolution missed an item");

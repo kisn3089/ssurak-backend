@@ -150,6 +150,46 @@ describe("MenuService.bulkCreateMenus — 카테고리 해석", () => {
     expect(createdRows()).toMatchObject([{ categoryId: categoryRow.id }]);
   });
 
+  /**
+   * 초안 매퍼가 쓰는 정규화(NFC·소문자·공백제거)와 같은 규칙이어야 한다.
+   * 여기만 원문 비교로 두면 초안에서 기존 카테고리로 접힌 이름이 등록 단계에서 갈라진다.
+   */
+  it("공백·대소문자만 다른 이름은 기존 카테고리로 본다", async () => {
+    await service.bulkCreateMenus(
+      OWNER,
+      STORE_ID,
+      payload([menuItem({ categoryId: undefined, categoryName: "찌개 류" })])
+    );
+
+    expect(prisma.category.upsert).not.toHaveBeenCalled();
+    expect(createdRows()).toMatchObject([{ categoryId: categoryRow.id }]);
+  });
+
+  it("한 요청 안에서 표기만 다른 새 이름은 카테고리를 하나만 만든다", async () => {
+    await service.bulkCreateMenus(
+      OWNER,
+      STORE_ID,
+      payload([
+        menuItem({ categoryId: undefined, categoryName: "사이드 메뉴" }),
+        menuItem({
+          name: "감자튀김",
+          categoryId: undefined,
+          categoryName: "사이드메뉴",
+        }),
+      ])
+    );
+
+    expect(prisma.category.upsert).toHaveBeenCalledTimes(1);
+    // DB에는 먼저 나온 원문 표기가 들어간다.
+    expect(prisma.category.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          storeId_name: { storeId: storeRow.id, name: "사이드 메뉴" },
+        },
+      })
+    );
+  });
+
   it("같은 이름의 새 카테고리가 여러 항목에 걸쳐도 한 번만 만든다", async () => {
     await service.bulkCreateMenus(
       OWNER,

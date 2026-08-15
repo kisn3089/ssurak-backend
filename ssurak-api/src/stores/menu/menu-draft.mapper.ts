@@ -12,6 +12,7 @@ import {
   type MenuDraftItemPayload,
   type MenuExtraction,
 } from "@ssurak/schema";
+import { normalizeNameKey } from "src/utils/helper/normalizeName";
 
 export interface DraftCategoryRef {
   publicId: string;
@@ -23,15 +24,7 @@ export interface MenuDraftContext {
   existingMenuNames: string[];
 }
 
-/**
- * 이름 비교용 정규화 키.
- *
- * NFC 정규화가 필요한 이유: 한글은 조합형(NFD)과 완성형(NFC)이 코드포인트가 달라
- * 눈에 같아 보여도 문자열 비교가 어긋난다. 모델 출력과 DB 값의 출처가 다르므로
- * 한쪽으로 모으지 않으면 "찌개류"가 매칭되지 않는 일이 생긴다.
- */
-const normalizeKey = (raw: string): string =>
-  raw.normalize("NFC").trim().toLowerCase().replace(/\s+/g, "");
+const normalizeKey = normalizeNameKey;
 
 export function toMenuDraft(
   extraction: MenuExtraction,

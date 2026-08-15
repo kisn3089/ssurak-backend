@@ -359,9 +359,7 @@ describe("toMenuDraft — unreadableCount", () => {
 });
 
 describe("recomputeMenuDraftIssues", () => {
-  const stored = (
-    overrides: Partial<MenuDraftItem> = {}
-  ): MenuDraftItem => ({
+  const stored = (overrides: Partial<MenuDraftItem> = {}): MenuDraftItem => ({
     name: "김치찌개",
     price: 9000,
     description: null,
