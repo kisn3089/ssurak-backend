@@ -16,12 +16,14 @@ import { RealtimeModule } from "src/realtime/realtime.module";
 import { StorageModule } from "src/storage/storage.module";
 import { S3Module } from "src/storage/s3.module";
 import { MenuImageModule } from "src/common/image/menu-image.module";
+import { envSchemas } from "@ssurak/schema";
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ["../.env"],
+      validate: (config) => envSchemas.parse(config),
     }),
     PrismaModule,
     RedisModule,

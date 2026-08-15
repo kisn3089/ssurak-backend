@@ -3,10 +3,8 @@ import { ConfigService } from "@nestjs/config";
 import type { MenuImages } from "@ssurak/schema";
 import { buildMenuImageUrls } from "./menu-image";
 
-/** `imageKey`를 담은 Prisma row. 응답으로 나갈 때 `images`로 치환된다. */
 type WithImageKey = { imageKey: string | null };
 
-/** `imageKey`가 제거되고 `images`가 붙은 응답 형태. */
 export type WithMenuImages<T> = Omit<T, "imageKey"> & {
   images: MenuImages | null;
 };

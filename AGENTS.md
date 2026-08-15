@@ -16,6 +16,8 @@ ssurak **백엔드 전용** 레포입니다. 프론트엔드(order, console)는 
 - **언어**: TypeScript 6.0.3, `strict: true`, module `nodenext`, target `es2024`
 - **프레임워크**: NestJS 11 (Express), Prisma 6 (MySQL), Redis(ioredis), Socket.IO
 - **검증/직렬화**: zod 3 + nestjs-zod (`class-validator`/`class-transformer` 사용 안 함)
+- **이미지**: sharp + heic-convert, S3/CloudFront
+- **AI**: openai (메뉴판 사진 → 메뉴 초안 추출. Responses API structured output)
 - **테스트**: vitest (jest 아님)
 - **린트**: ESLint 9 FlatConfig + Prettier
 
@@ -62,5 +64,6 @@ Docker 상세(스테이지 구조, 환경변수 배치 규칙, 트러블슈팅)�
 
 - MySQL 컨테이너는 볼륨이 빈 최초 1회에만 유저/DB 생성 + `db/init/` 스크립트를 실행한다. `.env`의 DB 계정 값을 바꾸면 `docker compose -f docker-compose.dev.yml down -v` 후 재기동해야 한다.
 - compose 프로젝트명은 `name: ssurak` / `ssurak-dev`로 고정되어 있다. 지우면 디렉토리명(`backend`) 기반으로 다른 레포와 볼륨을 공유하는 사고가 난다.
+- dev 컨테이너의 `node_modules`는 익명 볼륨이라 호스트의 `pnpm install`이 보이지 않는다. 의존성을 추가했으면 `docker compose -f docker-compose.dev.yml up -d --build --renew-anon-volumes ssurak`으로 이미지 재빌드 + 볼륨 재생성을 해야 한다 (컨테이너 안에서 `pnpm install`을 돌리면 modules purge 확인 프롬프트에 걸린다).
 - `prisma migrate deploy`와 seed는 멱등이므로 매 `up`마다 실행돼도 안전하다 (운영 compose의 migrate 서비스).
 - prod 이미지의 migrate는 `db/studio.Dockerfile`의 `migrate` 타깃을 쓴다 (production 이미지에는 prisma CLI가 없음).

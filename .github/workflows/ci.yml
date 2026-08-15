@@ -66,6 +66,9 @@ jobs:
           AWS_REGION=ap-northeast-2
           S3_BUCKET=ssurak-media-test
           CDN_BASE_URL=https://cdn.test.local
+          # OpenAiModule도 같은 이유로 부팅 시점에 키를 요구한다. e2e는 인식 API를
+          # 호출하지 않아 실제 OpenAI 요청은 나가지 않으니 더미 키로 충분하다.
+          OPENAI_API_KEY=sk-ci-dummy
           EOF
 
       # postinstall이 prisma generate까지 수행한다

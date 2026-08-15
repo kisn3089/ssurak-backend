@@ -1,7 +1,10 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { createId } from "@paralleldrive/cuid2";
 import { PrismaService } from "src/prisma/prisma.service";
 import { Owner, Prisma, PublicMenu } from "@ssurak/db";
+import type { BulkMenuItem } from "@ssurak/schema";
 import {
+  BulkCreateMenusPayloadDto,
   CreateMenuPayloadDto,
   ReorderMenusPayloadDto,
   UpdateMenuPayloadDto,
@@ -21,18 +24,24 @@ import {
   withReorderLock,
 } from "src/utils/helper/withReorderLock";
 import { Tx } from "src/utils/helper/transactionPipe";
+import {
+  normalizeNameKey,
+  normalizeNameValue,
+} from "src/utils/helper/normalizeName";
+import { MenuDraftStore } from "./menu-draft.store";
+
+const BULK_TX_TIMEOUT_MS = 15_000;
 
 @Injectable()
 export class MenuService {
+  private readonly logger = new Logger(MenuService.name);
+
   constructor(
     private readonly prismaService: PrismaService,
-    private readonly storageService: StorageService
+    private readonly storageService: StorageService,
+    private readonly menuDraftStore: MenuDraftStore
   ) {}
 
-  /**
-   * 메뉴는 카테고리 안 맨 뒤에 붙는다. 동시 생성으로 sortOrder가 겹쳐도 목록은
-   * id 타이브레이크로 결정적이고, 다음 재정렬에서 전부 다시 매겨진다.
-   */
   async createMenu(
     client: Owner,
     storeId: string,
@@ -41,7 +50,6 @@ export class MenuService {
     const { categoryId, imageKey, ...rest } = createPayload;
     await this.assertCategoryBelongsToStore(client, categoryId, storeId);
 
-    // S3 승격은 트랜잭션 밖에 둔다 — 네트워크 왕복을 트랜잭션 시간 예산에 태우지 않는다.
     const promotedKey = imageKey
       ? await this.storageService.promoteMenuImage(imageKey, client.publicId)
       : null;
@@ -54,6 +62,167 @@ export class MenuService {
         category: { connect: { publicId: categoryId } },
       },
       omit: OMIT_MENU_PRIVATE,
+    });
+  }
+
+  async bulkCreateMenus(
+    client: Owner,
+    storeId: string,
+    { items, draftId }: BulkCreateMenusPayloadDto
+  ): Promise<PublicMenu[]> {
+    const publicIds = items.map(() => createId());
+
+    const bulkCreateResult = await this.prismaService.$transaction(
+      async (tx) => {
+        const categoryIds = await this.resolveBulkCategories(
+          tx,
+          client,
+          storeId,
+          items
+        );
+
+        const sortOrders = await this.nextSortOrders(tx, categoryIds);
+
+        await tx.menu.createMany({
+          data: items.map((item, index) => ({
+            publicId: publicIds[index],
+            name: item.name,
+            price: item.price,
+            description: item.description ?? null,
+            isAvailable: item.isAvailable,
+            categoryId: categoryIds[index],
+            sortOrder: sortOrders[index],
+          })),
+        });
+
+        const created = await tx.menu.findMany({
+          where: { publicId: { in: publicIds } },
+          omit: OMIT_MENU_PRIVATE,
+        });
+
+        // findMany는 요청 순서를 보장하지 않는다. 사장님이 초안 화면에서 본 순서와
+        // 응답 순서가 어긋나면 어느 줄이 어떻게 저장됐는지 대조할 수 없다.
+        const byPublicId = new Map(
+          created.map((menu) => [menu.publicId, menu])
+        );
+        return publicIds.flatMap((publicId) => {
+          const menu = byPublicId.get(publicId);
+          return menu ? [menu] : [];
+        });
+      },
+      { timeout: BULK_TX_TIMEOUT_MS }
+    );
+
+    if (draftId) {
+      await this.menuDraftStore
+        .markCommitted({ ownerPublicId: client.publicId, storeId }, draftId)
+        .catch((error: unknown) => {
+          this.logger.error(`menu draft mark committed failed: ${error}`);
+        });
+    }
+
+    return bulkCreateResult;
+  }
+
+  /**
+   * 항목별 카테고리를 내부 id로 확정한다(입력 순서 유지).
+   *
+   * `categoryName`으로 온 것은 없으면 만든다. 같은 이름이 여러 항목에 걸쳐 있어도
+   * 카테고리는 하나만 생기고, 같은 매장에 동시 요청이 들어와도
+   * `@@unique([storeId, name])` 위에서 upsert하므로 중복이 생기지 않는다.
+   */
+  private async resolveBulkCategories(
+    tx: Tx,
+    client: Owner,
+    storeId: string,
+    items: BulkMenuItem[]
+  ): Promise<bigint[]> {
+    const store = await tx.store.findFirstOrThrow({
+      where: { publicId: storeId, owner: { id: client.id } },
+      select: { id: true },
+    });
+
+    const existingCategories = await tx.category.findMany({
+      where: { storeId: store.id },
+      select: { id: true, publicId: true, name: true, sortOrder: true },
+    });
+
+    const byPublicId = new Map(
+      existingCategories.map((category) => [category.publicId, category.id])
+    );
+    const byName = new Map(
+      existingCategories.map((category) => [
+        normalizeNameKey(category.name),
+        category.id,
+      ])
+    );
+    let sortOrder = existingCategories.reduce(
+      (max, category) => Math.max(max, category.sortOrder),
+      0
+    );
+
+    for (const publicId of new Set(
+      items.flatMap((item) => (item.categoryId ? [item.categoryId] : []))
+    )) {
+      if (!byPublicId.has(publicId)) {
+        throw new NotFoundException(`카테고리 ${publicId}를 찾을 수 없습니다.`);
+      }
+    }
+
+    // 정규화 키로 접어 순회한다 — "사이드 메뉴"와 "사이드메뉴"가 한 요청에 같이 와도
+    // 카테고리는 하나만 생기고, DB에는 먼저 나온 원문 표기로 들어간다.
+    const newNames = new Map<string, string>();
+    for (const item of items) {
+      if (item.categoryName === undefined) continue;
+
+      const name = normalizeNameValue(item.categoryName);
+      const key = normalizeNameKey(name);
+      if (byName.has(key) || newNames.has(key)) continue;
+
+      newNames.set(key, name);
+    }
+
+    for (const [key, name] of newNames) {
+      sortOrder += SORT_ORDER_STEP;
+      const category = await tx.category.upsert({
+        where: { storeId_name: { storeId: store.id, name } },
+        update: {},
+        create: { name, sortOrder, store: { connect: { id: store.id } } },
+        select: { id: true },
+      });
+      byName.set(key, category.id);
+    }
+
+    return items.map((item) => {
+      const resolved = item.categoryId
+        ? byPublicId.get(item.categoryId)
+        : byName.get(normalizeNameKey(item.categoryName ?? ""));
+
+      if (resolved === undefined) {
+        throw new Error("bulk category resolution missed an item");
+      }
+      return resolved;
+    });
+  }
+
+  private async nextSortOrders(
+    tx: Tx,
+    categoryIds: bigint[]
+  ): Promise<number[]> {
+    const grouped = await tx.menu.groupBy({
+      by: ["categoryId"],
+      where: { categoryId: { in: [...new Set(categoryIds)] }, deletedAt: null },
+      _max: { sortOrder: true },
+    });
+
+    const cursors = new Map<bigint, number>(
+      grouped.map((row) => [row.categoryId, row._max.sortOrder ?? 0])
+    );
+
+    return categoryIds.map((categoryId) => {
+      const next = (cursors.get(categoryId) ?? 0) + SORT_ORDER_STEP;
+      cursors.set(categoryId, next);
+      return next;
     });
   }
 

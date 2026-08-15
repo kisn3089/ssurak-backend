@@ -14,7 +14,6 @@ export const createOwnerPayloadSchema = z
         "비밀번호는 최소 1개의 특수문자를 포함해야 합니다."
       ),
     name: z.string().min(1, "이름을 입력해주세요."),
-    // TODO: 0507로 시작하는 안심번호도 허용하기 위해 01[0-9]로 패턴 수정
     phone: z
       .string()
       .regex(

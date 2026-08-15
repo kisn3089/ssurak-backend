@@ -16,12 +16,17 @@ import { CategoryController } from "./menu/category.controller";
 import { MenuOptionChoiceService } from "./menu/menu-option-choice.service";
 import { MenuOptionController } from "./menu/menu-option.controller";
 import { MenuOptionService } from "./menu/menu-option.service";
+import { MenuDraftController } from "./menu/menu-draft.controller";
+import { MenuDraftService } from "./menu/menu-draft.service";
+import { MenuDraftStore } from "./menu/menu-draft.store";
+import { MenuVisionClient } from "./menu/menu-vision.client";
+import { OpenAiModule } from "src/common/ai/openai.module";
 
 @Module({
-  // MenuService가 이미지 확정(promoteMenuImage)에 StorageService를 쓴다.
-  imports: [PassportModule, JwtModule, StorageModule],
+  imports: [PassportModule, JwtModule, StorageModule, OpenAiModule],
   controllers: [
     StoresController,
+    MenuDraftController, // MenuController의 `GET :menuId`가 "drafts"를 메뉴 ID로 삼키지 않도록 먼저 등록한다.
     MenuController,
     TableController,
     SessionController,
@@ -32,6 +37,9 @@ import { MenuOptionService } from "./menu/menu-option.service";
   providers: [
     StoresService,
     MenuService,
+    MenuDraftService,
+    MenuDraftStore,
+    MenuVisionClient,
     MenuOptionService,
     MenuOptionChoiceService,
     CategoryService,
