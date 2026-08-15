@@ -28,12 +28,6 @@ const DEFAULT_TIMEOUT_MS = 55_000;
 
 const SCHEMA_NAME = "menu_extraction";
 
-/**
- * 메뉴판 사진 → 구조화된 메뉴 목록. OpenAI 호출만 담당한다.
- *
- * 정규화·검증은 여기서 하지 않는다 — 이 클래스는 네트워크 경계라 테스트가
- * mock에 묶이고, 그 안에 로직을 두면 로직도 같이 묶여 버린다.
- */
 @Injectable()
 export class MenuVisionClient {
   private readonly logger = new Logger(MenuVisionClient.name);
@@ -79,6 +73,8 @@ export class MenuVisionClient {
   }
 
   private async request(images: OcrImage[], existingCategoryNames: string[]) {
+    const timeout = AbortSignal.timeout(this.timeoutMs);
+
     try {
       return await this.openai.responses.parse(
         {
@@ -102,10 +98,10 @@ export class MenuVisionClient {
           ],
           text: { format: zodTextFormat(menuExtractionSchema, SCHEMA_NAME) },
         },
-        { signal: AbortSignal.timeout(this.timeoutMs) }
+        { signal: timeout }
       );
     } catch (error) {
-      throw this.toHttpException(error);
+      throw this.toHttpException(error, timeout);
     }
   }
 
@@ -115,9 +111,13 @@ export class MenuVisionClient {
    * 그대로 두면 전역 필터가 전부 500으로 뭉개서, 잠시 후 다시 누르면 될 일과
    * 사진을 다시 찍어야 할 일이 구분되지 않는다.
    */
-  private toHttpException(error: unknown): unknown {
+  private toHttpException(error: unknown, timeout: AbortSignal): unknown {
     if (error instanceof OpenAI.APIUserAbortError) {
-      this.logger.warn(`menu vision timeout after ${this.timeoutMs}ms`);
+      this.logger.warn(
+        timeout.aborted
+          ? `menu vision timeout after ${this.timeoutMs}ms`
+          : "menu vision aborted by caller before the timeout"
+      );
       return new ServiceUnavailableException(
         "메뉴 인식이 시간 안에 끝나지 않았습니다. 사진을 나눠서 다시 시도해 주세요."
       );
@@ -141,8 +141,6 @@ export class MenuVisionClient {
       );
     }
 
-    // 인증 실패·잘못된 모델명 등 설정 오류. 사장님이 할 수 있는 게 없으므로
-    // 원문을 로그로 남기고 그대로 전역 필터(500)에 넘긴다.
     if (error instanceof OpenAI.APIError) {
       this.logger.error(
         `menu vision request rejected (status=${error.status}): ${error.message}`
