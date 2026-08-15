@@ -12,6 +12,7 @@ import type { Category, Owner } from "@ssurak/db";
 import type {
   MenuDraftItem,
   MenuDraftResponse,
+  MenuDraftSummary,
   MenuExtraction,
 } from "@ssurak/schema";
 import { PrismaService } from "src/prisma/prisma.service";
@@ -29,6 +30,8 @@ import sharp from "sharp";
 const STORE_ID = "store-public-id";
 const RATE_LIMIT = 15;
 const RATE_WINDOW_HOURS = 8;
+/** 상한은 매장이 아니라 점주 단위다. 키에 storeId가 들어가지 않는다. */
+const RATE_KEY = "menu-draft:rate:owner-public-id";
 
 const OWNER: Owner = {
   id: 7n,
@@ -98,6 +101,8 @@ const rateLimitTransaction = () => {
   const chain = {
     incr: vi.fn(() => chain),
     expire: vi.fn(() => chain),
+    get: vi.fn(() => chain),
+    ttl: vi.fn(() => chain),
     exec: vi.fn(),
   };
   return chain;
@@ -110,6 +115,13 @@ const usedCount = (used: number) =>
   transaction.exec.mockResolvedValue([
     [null, used],
     [null, 1],
+  ]);
+
+/** 조회 경로의 `exec`. GET은 문자열(없으면 null), TTL은 남은 초. */
+const rateState = (counter: string | null, ttlSeconds: number) =>
+  transaction.exec.mockResolvedValue([
+    [null, counter],
+    [null, ttlSeconds],
   ]);
 
 /** 저장된 초안의 항목 하나. 재사용 경로가 표시를 다시 계산하는 대상이다. */
@@ -468,6 +480,82 @@ describe("MenuDraftService — 조회·수정", () => {
   });
 });
 
+/**
+ * 남은 횟수는 목록에 얹어 보내는 부가 정보다. 8시간 고정 창이라 "몇 번 남았나"만으로는
+ * 부족하고 언제 풀리는지까지 있어야 사장님이 기다릴지 말지 정할 수 있다.
+ */
+describe("MenuDraftService — 목록의 남은 횟수", () => {
+  const DRAFT_SUMMARY: MenuDraftSummary = {
+    draftId: "AAAAAAAAAAAAAAAAAAAAAA",
+    status: "READY",
+    itemCount: 1,
+    sourceImages: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
+  };
+
+  // clearAllMocks는 구현을 지우지 않아 앞 테스트의 mockRejectedValue가 남는다.
+  beforeEach(() => store.list.mockResolvedValue([]));
+
+  it("남은 횟수와 초기화 시각을 함께 내려준다", async () => {
+    rateState("3", 2 * 60 * 60);
+
+    const before = Date.now();
+    const { remaining, resetAt } = await service.listDrafts(OWNER, STORE_ID);
+
+    // 차감할 때와 같은 키를 읽어야 표시와 실제가 갈라지지 않는다.
+    expect(transaction.get).toHaveBeenCalledWith(RATE_KEY);
+    expect(transaction.ttl).toHaveBeenCalledWith(RATE_KEY);
+    expect(remaining).toBe(RATE_LIMIT - 3);
+    expect(Date.parse(resetAt as string)).toBeGreaterThanOrEqual(
+      before + 2 * 60 * 60 * 1000
+    );
+  });
+
+  it("아직 쓰지 않았으면 상한이 그대로 남고 초기화 시각은 없다", async () => {
+    // 키가 없으면 GET은 null, TTL은 -2다.
+    rateState(null, -2);
+
+    await expect(service.listDrafts(OWNER, STORE_ID)).resolves.toMatchObject({
+      remaining: RATE_LIMIT,
+      resetAt: null,
+    });
+  });
+
+  it("상한을 넘겨 썼어도 음수로 내려가지 않는다", async () => {
+    rateState(String(RATE_LIMIT + 5), 60);
+
+    await expect(service.listDrafts(OWNER, STORE_ID)).resolves.toMatchObject({
+      remaining: 0,
+    });
+  });
+
+  /**
+   * 부가 정보 하나 때문에 목록 전체를 막으면 안 된다. 컨트롤러가 응답을 스키마로
+   * parse하므로 NaN이나 undefined가 새어 나가면 목록이 통째로 500이 된다.
+   */
+  it("카운터를 못 읽어도 목록은 그대로 보여준다", async () => {
+    transaction.exec.mockRejectedValue(new Error("redis down"));
+    store.list.mockResolvedValue([DRAFT_SUMMARY]);
+
+    await expect(service.listDrafts(OWNER, STORE_ID)).resolves.toEqual({
+      drafts: [DRAFT_SUMMARY],
+      remaining: null,
+      resetAt: null,
+    });
+  });
+
+  it("카운터 값이 숫자가 아니면 목록만 남기고 null로 접는다", async () => {
+    rateState("nonsense", 60);
+
+    await expect(service.listDrafts(OWNER, STORE_ID)).resolves.toMatchObject({
+      remaining: null,
+      resetAt: null,
+    });
+  });
+});
+
 describe("MenuDraftService — 레이트리밋", () => {
   it("상한을 넘으면 429로 거절하고 모델을 부르지 않는다", async () => {
     usedCount(RATE_LIMIT + 1);
@@ -489,21 +577,29 @@ describe("MenuDraftService — 레이트리밋", () => {
 
   /**
    * INCR과 EXPIRE가 갈라지면 그 사이에 죽은 프로세스가 TTL 없는 카운터를 남기고,
-   * 그 점주는 상한을 채운 뒤 영영 인식을 못 하게 된다. 한 트랜잭션으로 나가는지 고정한다.
+   * 그 매장은 상한을 채운 뒤 영영 인식을 못 하게 된다. 한 트랜잭션으로 나가는지 고정한다.
    */
   it("카운터와 TTL을 한 번의 트랜잭션으로 보낸다", async () => {
     await service.createDraft(OWNER, STORE_ID, await uploads());
 
     expect(transaction.exec).toHaveBeenCalledTimes(1);
-    expect(transaction.incr).toHaveBeenCalledWith(
-      `menu-draft:rate:${OWNER.publicId}`
-    );
+    expect(transaction.incr).toHaveBeenCalledWith(RATE_KEY);
     // NX가 빠지면 매 요청이 만료를 미뤄 창이 영원히 안 닫힌다(슬라이딩이 돼 버린다).
     expect(transaction.expire).toHaveBeenCalledWith(
-      `menu-draft:rate:${OWNER.publicId}`,
+      RATE_KEY,
       RATE_WINDOW_HOURS * 60 * 60,
       "NX"
     );
+  });
+
+  /**
+   * 점주 단위 상한이다. 매장별로 쪼개면 매장을 늘리는 것만으로 총량을 늘릴 수 있어
+   * 상한이 비용을 못 막는다. 키에 storeId가 끼어드는 순간 그렇게 된다.
+   */
+  it("매장이 달라도 같은 카운터를 쓴다", async () => {
+    await service.createDraft(OWNER, "other-store-id", await uploads());
+
+    expect(transaction.incr).toHaveBeenCalledWith(RATE_KEY);
   });
 
   it("TTL을 걸지 못하면 통과시키지 않는다", async () => {

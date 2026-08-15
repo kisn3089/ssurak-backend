@@ -18,7 +18,9 @@ import { MenuService } from "src/stores/menu/menu.service";
  * 순서 의존을 코드 주석으로만 남기면 컨트롤러 배열을 정리하다 조용히 깨지므로 여기서 고정한다.
  */
 describe("메뉴 초안 라우팅", () => {
-  const listDrafts = vi.fn().mockResolvedValue({ drafts: [] });
+  // 컨트롤러가 응답을 스키마로 parse하므로 목도 필드를 다 채워야 200이 난다.
+  const listResponse = { drafts: [], remaining: 15, resetAt: null };
+  const listDrafts = vi.fn().mockResolvedValue(listResponse);
   const menuUnique = vi.fn();
 
   let app: INestApplication;
@@ -62,7 +64,7 @@ describe("메뉴 초안 라우팅", () => {
 
     await request(app.getHttpServer())
       .get(`/${storeId}/menus/drafts`)
-      .expect(200, { drafts: [] });
+      .expect(200, listResponse);
 
     expect(listDrafts).toHaveBeenCalled();
     expect(menuUnique).not.toHaveBeenCalled();

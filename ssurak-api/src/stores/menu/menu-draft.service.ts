@@ -38,8 +38,14 @@ import {
   type DraftScope,
 } from "./menu-draft.store";
 
+/** 상한은 점주 단위다. 매장을 여럿 가진 점주도 총량은 하나로 묶인다. */
 const rateKeyOf = (ownerPublicId: string): string =>
   `menu-draft:rate:${ownerPublicId}`;
+
+/** TTL이 돌려주는 특수값. -2는 키 없음, -1은 만료 없음. */
+const TTL_NO_EXPIRY = -1;
+
+type MenuDraftRateState = Pick<MenuDraftListResponse, "remaining" | "resetAt">;
 
 export interface DraftImageUpload {
   buffer: Buffer;
@@ -144,11 +150,14 @@ export class MenuDraftService {
     client: Owner,
     storeId: string
   ): Promise<MenuDraftListResponse> {
-    const drafts = await this.guarded(() =>
-      this.menuDraftStore.list(buildScope(client, storeId))
-    );
+    const scope = buildScope(client, storeId);
 
-    return { drafts };
+    const [drafts, rate] = await Promise.all([
+      this.guarded(() => this.menuDraftStore.list(scope)),
+      this.readRateState(client.publicId),
+    ]);
+
+    return { drafts, ...rate };
   }
 
   async getDraft(
@@ -223,6 +232,32 @@ export class MenuDraftService {
       });
 
     return stored ?? { ...draft, items };
+  }
+
+  private async readRateState(
+    ownerPublicId: string
+  ): Promise<MenuDraftRateState> {
+    const key = rateKeyOf(ownerPublicId);
+
+    try {
+      const replies = await this.redis.multi().get(key).ttl(key).exec();
+      const { used, ttlSeconds } = rateStateOf(replies);
+
+      if (ttlSeconds === TTL_NO_EXPIRY) {
+        this.logger.warn(`menu draft rate counter has no ttl: ${key}`);
+      }
+
+      return {
+        remaining: Math.max(this.rateLimit - used, 0),
+        resetAt:
+          ttlSeconds > 0
+            ? new Date(Date.now() + ttlSeconds * 1000).toISOString()
+            : null,
+      };
+    } catch (error: unknown) {
+      this.logger.warn(`menu draft rate state unavailable: ${String(error)}`);
+      return { remaining: null, resetAt: null };
+    }
   }
 
   private async assertReusable(scope: DraftScope, draftId: string) {
@@ -397,4 +432,31 @@ const rateCountOf = (replies: [Error | null, unknown][] | null): number => {
   }
 
   return used;
+};
+
+const rateStateOf = (
+  replies: [Error | null, unknown][] | null
+): { used: number; ttlSeconds: number } => {
+  if (!replies || replies.length !== 2) {
+    throw new TypeError(
+      `unexpected rate state reply: ${JSON.stringify(replies)}`
+    );
+  }
+
+  for (const [error] of replies) {
+    if (error) throw error;
+  }
+
+  const counter = replies[0][1];
+  const used = counter === null ? 0 : Number(counter);
+  if (!Number.isInteger(used) || used < 0) {
+    throw new TypeError(`unexpected rate state counter: ${String(counter)}`);
+  }
+
+  const ttlSeconds = replies[1][1];
+  if (typeof ttlSeconds !== "number") {
+    throw new TypeError(`unexpected rate state ttl: ${typeof ttlSeconds}`);
+  }
+
+  return { used, ttlSeconds };
 };

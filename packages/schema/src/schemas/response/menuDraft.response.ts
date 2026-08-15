@@ -93,6 +93,17 @@ export type MenuDraftResponse = z.infer<typeof menuDraftResponseSchema>;
 
 export const menuDraftListResponseSchema = z.object({
   drafts: z.array(menuDraftSummarySchema).describe("최근에 추출한 순서"),
+  remaining: z
+    .number()
+    .int()
+    .nonnegative()
+    .nullable()
+    .describe("점주 기준 남은 초안 추출 가능 횟수. null이면 조회에 실패한 것"),
+  resetAt: z
+    .string()
+    .datetime()
+    .nullable()
+    .describe("횟수가 초기화되는 시각. null이면 아직 쓰지 않았거나 조회 실패"),
 });
 
 export type MenuDraftListResponse = z.infer<typeof menuDraftListResponseSchema>;
