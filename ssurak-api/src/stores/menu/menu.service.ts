@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { createId } from "@paralleldrive/cuid2";
 import { PrismaService } from "src/prisma/prisma.service";
 import { Owner, Prisma, PublicMenu } from "@ssurak/db";
@@ -24,16 +24,18 @@ import {
   withReorderLock,
 } from "src/utils/helper/withReorderLock";
 import { Tx } from "src/utils/helper/transactionPipe";
-import { MenuDraftService } from "./menu-draft.service";
+import { MenuDraftStore } from "./menu-draft.store";
 
 const BULK_TX_TIMEOUT_MS = 15_000;
 
 @Injectable()
 export class MenuService {
+  private readonly logger = new Logger(MenuService.name);
+
   constructor(
     private readonly prismaService: PrismaService,
     private readonly storageService: StorageService,
-    private readonly menuDraftService: MenuDraftService
+    private readonly menuDraftStore: MenuDraftStore
   ) {}
 
   async createMenu(
@@ -108,7 +110,11 @@ export class MenuService {
     );
 
     if (draftId) {
-      await this.menuDraftService.markCommitted(client, storeId, draftId);
+      await this.menuDraftStore
+        .markCommitted({ ownerPublicId: client.publicId, storeId }, draftId)
+        .catch((error: unknown) => {
+          this.logger.error(`menu draft mark committed failed: ${error}`);
+        });
     }
 
     return bulkCreateResult;

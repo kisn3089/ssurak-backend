@@ -224,15 +224,13 @@ export class MenuDraftStore {
       .exec();
   }
 
-  async markCommitted(scope: DraftScope, draftId: string) {
+  async markCommitted(scope: DraftScope, draftId: string): Promise<void> {
     const key = draftKeyOf(scope, draftId);
-    if ((await this.redis.exists(key)) === 0) return null;
-
-    const updatedAt = new Date().toISOString();
+    if ((await this.redis.exists(key)) === 0) return;
 
     await this.redis.hset(key, {
       [FIELDS.status]: "COMMITTED",
-      [FIELDS.updatedAt]: updatedAt,
+      [FIELDS.updatedAt]: new Date().toISOString(),
     });
   }
 

@@ -5,7 +5,7 @@ import { Category, Menu, Owner, Prisma, Store } from "@ssurak/db";
 import { MenuService } from "src/stores/menu/menu.service";
 import { PrismaService } from "src/prisma/prisma.service";
 import { StorageService } from "src/storage/storage.service";
-import { MenuDraftService } from "src/stores/menu/menu-draft.service";
+import { MenuDraftStore } from "src/stores/menu/menu-draft.store";
 import type { BulkCreateMenusPayloadDto } from "src/dto/request/menu.dto";
 
 const STORE_ID = "store-public-id";
@@ -81,7 +81,7 @@ const menuItem = (
 
 const prisma = mockDeep<PrismaService>();
 const storage = mockDeep<StorageService>();
-const menuDraft = mockDeep<MenuDraftService>();
+const menuDraft = mockDeep<MenuDraftStore>();
 
 const service = new MenuService(prisma, storage, menuDraft);
 

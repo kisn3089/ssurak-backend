@@ -208,21 +208,6 @@ export class MenuDraftService {
     return updated;
   }
 
-  async markCommitted(
-    client: Owner,
-    storeId: string,
-    draftId: string
-  ): Promise<void> {
-    try {
-      await this.menuDraftStore.markCommitted(
-        buildScope(client, storeId),
-        draftId
-      );
-    } catch (error: unknown) {
-      this.logger.error(`menu draft mark committed failed: ${String(error)}`);
-    }
-  }
-
   private async readRateState(
     ownerPublicId: string
   ): Promise<MenuDraftRateState> {
