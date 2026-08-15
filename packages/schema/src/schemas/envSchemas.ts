@@ -8,7 +8,7 @@ export const envSchemas = z
       .int()
       .positive()
       .default(55_000),
-    MENU_DRAFT_RATE_LIMIT: z.coerce.number().int().positive().default(15),
-    MENU_DRAFT_RATE_WINDOW_HOURS: z.coerce.number().int().positive().default(8),
+    MENU_DRAFT_RATE_LIMIT: z.coerce.number().int().positive().default(5),
+    MENU_DRAFT_RATE_WINDOW_HOURS: z.coerce.number().int().positive().default(2),
   })
   .passthrough();
