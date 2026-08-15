@@ -442,15 +442,15 @@ describe("MenuDraftService — 조회·수정", () => {
   });
 
   /**
-   * 일괄 등록을 마친 초안을 다시 열면 그 메뉴들은 이제 매장에 존재한다.
-   * 저장된 issues는 추출 당시 값이라 깨끗한데, 그대로 보여주면 사장님이 또 확정해
-   * 같은 메뉴가 두 벌 생긴다. POST 재사용·PATCH와 같은 기준으로 다시 계산해야 한다.
+   * 저장된 issues는 추출 당시 값이라, 그 뒤 매장에서 카테고리를 지우거나 같은 이름의
+   * 메뉴를 따로 만들면 낡는다. 아직 확정 전(READY)이면 POST 재사용·PATCH와 같은
+   * 기준으로 다시 풀어야 사장님이 지금 고쳐야 할 것만 본다.
    */
   it("조회 시 issues를 지금 매장 기준으로 다시 계산한다", async () => {
     store.find.mockResolvedValue(
       savedDraft({
         draftId: "AAAAAAAAAAAAAAAAAAAAAA",
-        status: "COMMITTED",
+        status: "READY",
         // 추출 당시엔 매장에 없던 메뉴라 issues가 비어 있다.
         items: [DRAFT_ITEM],
         unreadableCount: 0,
@@ -459,7 +459,7 @@ describe("MenuDraftService — 조회·수정", () => {
         updatedAt: new Date().toISOString(),
       })
     );
-    // 그 사이 일괄 등록이 끝나 같은 이름이 매장에 생겼다.
+    // 그 사이 같은 이름의 메뉴가 매장에 생겼다.
     prisma.menu.findMany.mockResolvedValue([{ name: "김치찌개" }] as never);
 
     const draft = await service.getDraft(
@@ -469,6 +469,36 @@ describe("MenuDraftService — 조회·수정", () => {
     );
 
     expect(draft.items[0].issues).toContain("DUPLICATE_NAME");
+  });
+
+  /**
+   * 확정을 마친 초안은 그 항목이 전부 매장에 존재하므로, 다시 계산하면 예외 없이
+   * 전 항목이 DUPLICATE_NAME으로 물든다. 이미 끝난 작업 이력에 붙는 경고라
+   * 사장님이 할 수 있는 게 없다 — 확정 시점의 표시를 그대로 보여준다.
+   *
+   * 중복 등록을 막는 건 이 화면이 아니라 status와 POST 재사용 경로다.
+   */
+  it("확정한 초안은 저장된 표시를 그대로 보여준다", async () => {
+    store.find.mockResolvedValue(
+      savedDraft({
+        draftId: "AAAAAAAAAAAAAAAAAAAAAA",
+        status: "COMMITTED",
+        items: [DRAFT_ITEM],
+        unreadableCount: 0,
+        sourceImages: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+    );
+    prisma.menu.findMany.mockResolvedValue([{ name: "김치찌개" }] as never);
+
+    const draft = await service.getDraft(
+      OWNER,
+      STORE_ID,
+      "AAAAAAAAAAAAAAAAAAAAAA"
+    );
+
+    expect(draft.items[0].issues).toEqual([]);
   });
 
   /** 조회는 읽기다. 다시 계산했다고 저장까지 하면 updatedAt이 열어본 시각이 된다. */

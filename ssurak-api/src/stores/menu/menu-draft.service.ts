@@ -98,12 +98,18 @@ export class MenuDraftService {
       throw new UnprocessableEntityException(reusable.reason);
     }
     if (reusable?.kind === "draft") {
-      return await this.refreshReused(
+      const existingMenuNames = await this.getExistingMenuNames(
         client,
-        storeId,
-        categories,
-        reusable.draft
+        storeId
       );
+
+      return {
+        ...reusable.draft,
+        items: recomputeMenuDraftIssues(reusable.draft.items, {
+          categories,
+          existingMenuNames,
+        }),
+      };
     }
 
     await this.assertWithinRateLimit(client.publicId);
@@ -174,6 +180,10 @@ export class MenuDraftService {
     ]);
 
     if (!draft) throw notFound();
+    if (draft.status === "COMMITTED") {
+      return draft;
+    }
+
     return { ...draft, items: recomputeMenuDraftIssues(draft.items, context) };
   }
 
@@ -213,23 +223,6 @@ export class MenuDraftService {
     }
   }
 
-  private async refreshReused(
-    client: Owner,
-    storeId: string,
-    categories: DraftCategoryRef[],
-    draft: MenuDraftResponse
-  ): Promise<MenuDraftResponse> {
-    const existingMenuNames = await this.getExistingMenuNames(client, storeId);
-
-    return {
-      ...draft,
-      items: recomputeMenuDraftIssues(draft.items, {
-        categories,
-        existingMenuNames,
-      }),
-    };
-  }
-
   private async readRateState(
     ownerPublicId: string
   ): Promise<MenuDraftRateState> {
@@ -267,7 +260,6 @@ export class MenuDraftService {
     try {
       return await this.menuDraftStore.findOrFailure(scope, draftId);
     } catch (error: unknown) {
-      /** Redis가 죽어 있으면 "없음"으로 취급하고 진행한다 */
       this.logger.warn(`menu draft lookup failed: ${String(error)}`);
       return null;
     }
