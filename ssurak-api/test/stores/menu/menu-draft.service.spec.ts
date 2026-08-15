@@ -375,6 +375,46 @@ describe("MenuDraftService — 재사용", () => {
     expect(store.saveFailure).not.toHaveBeenCalled();
   });
 
+  /**
+   * 예약분을 되돌리지 않으면 OpenAI가 흔들리는 동안 사장님은 사진 한 장 못 읽고
+   * 2시간 잠긴다. 55초 타임아웃이 세 번이면 5회 중 3회가 결과 없이 사라진다.
+   */
+  it("업스트림 장애로 결과를 못 받으면 잡아둔 횟수를 돌려준다", async () => {
+    vision.extract.mockRejectedValue(
+      new HttpException("잠시 후 다시", HttpStatus.SERVICE_UNAVAILABLE)
+    );
+
+    await expect(
+      service.createDraft(OWNER, STORE_ID, await uploads())
+    ).rejects.toBeInstanceOf(HttpException);
+
+    expect(redis.eval).toHaveBeenCalledWith(
+      expect.stringContaining("DECR"),
+      1,
+      RATE_KEY
+    );
+  });
+
+  it("모델이 답을 준 실패는 횟수를 돌려주지 않는다", async () => {
+    // 메뉴판이 아니라는 판정도 호출이다 — 토큰 비용은 이미 나갔다.
+    vision.extract.mockRejectedValue(
+      new UnprocessableEntityException("사진에서 메뉴를 읽지 못했습니다.")
+    );
+
+    await expect(
+      service.createDraft(OWNER, STORE_ID, await uploads())
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+
+    expect(redis.eval).not.toHaveBeenCalled();
+  });
+
+  it("성공하면 잡아둔 횟수를 그대로 둔다", async () => {
+    await service.createDraft(OWNER, STORE_ID, await uploads());
+
+    expect(transaction.incr).toHaveBeenCalledWith(RATE_KEY);
+    expect(redis.eval).not.toHaveBeenCalled();
+  });
+
   it("초안 조회가 실패해도 추출로 넘어간다", async () => {
     store.findOrFailure.mockRejectedValue(new Error("redis down"));
 

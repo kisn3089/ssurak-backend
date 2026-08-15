@@ -254,7 +254,6 @@ export class MenuDraftService {
       };
     } catch (error: unknown) {
       this.logger.warn(`menu draft rate state unavailable: ${String(error)}`);
-      // rateLimit은 설정값이라 Redis 조회가 실패해도 그대로 내보낸다.
       return {
         remaining: null,
         resetAt: null,
@@ -284,6 +283,8 @@ export class MenuDraftService {
       return await this.menuVisionClient.extract(images, categoryNames);
     } catch (error: unknown) {
       if (error instanceof UnprocessableEntityException) {
+        // 모델이 "메뉴판이 아니다"라고 답한 것도 호출이다 — 토큰 비용은 이미 나갔으므로
+        // 횟수는 그대로 먹는다. 대신 실패를 기록해 같은 사진으로 다시 태우지 못하게 막는다.
         await this.menuDraftStore
           .saveFailure(scope, draftId, error.message)
           .catch((cause: unknown) => {
@@ -291,6 +292,8 @@ export class MenuDraftService {
               `menu draft failure record write failed: ${String(cause)}`
             );
           });
+      } else {
+        await this.refundRateLimit(scope.ownerPublicId);
       }
       throw error;
     }
@@ -338,10 +341,23 @@ export class MenuDraftService {
     }
 
     if (used > this.rateLimit) {
+      await this.refundRateLimit(ownerPublicId);
       throw new HttpException(
         `메뉴 인식은 ${this.rateWindowHours}시간에 ${this.rateLimit}번까지 사용할 수 있습니다. 잠시 후 다시 시도해 주세요.`,
         HttpStatus.TOO_MANY_REQUESTS
       );
+    }
+  }
+
+  /**
+   * 잡아둔 자리를 돌려준다. 실패해도 삼킨다 — 되돌리기가 원래 실패 이유를 덮으면 안 된다.
+   * 평범한 DECR을 쓰지 않는 이유는 스크립트 주석 참고.
+   */
+  private async refundRateLimit(ownerPublicId: string): Promise<void> {
+    try {
+      await this.redis.eval(RATE_REFUND_SCRIPT, 1, rateKeyOf(ownerPublicId));
+    } catch (error: unknown) {
+      this.logger.warn(`menu draft rate refund failed: ${String(error)}`);
     }
   }
 
@@ -437,6 +453,20 @@ const rateCountOf = (replies: [Error | null, unknown][] | null): number => {
 
   return used;
 };
+
+/**
+ * 예약분 되돌리기.
+ *
+ * 맨 DECR을 쓰면 이미 만료된 키를 -1로 되살려 TTL 없는 카운터가 남는다. 그러면 그
+ * 점주는 다음 창에서 6번을 쓰게 되고, 그 키는 영영 초기화되지 않는다.
+ * 0 이하로 내려가면 지워서 "창이 없는 상태"로 되돌린다 — 빈 창과 같은 뜻이다.
+ * DECR은 TTL을 건드리지 않으므로 남은 창 길이는 그대로 유지된다.
+ */
+const RATE_REFUND_SCRIPT = `
+local used = redis.call('DECR', KEYS[1])
+if used <= 0 then redis.call('DEL', KEYS[1]) end
+return used
+`;
 
 const rateStateOf = (
   replies: [Error | null, unknown][] | null
