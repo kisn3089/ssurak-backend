@@ -93,7 +93,8 @@ const meta = {
   },
   tooManyRequests: {
     status: 429,
-    description: "점주별 시간당 인식 횟수 초과, 또는 업스트림 사용량 제한",
+    description:
+      "점주별 인식 횟수 초과(창 길이·상한은 응답의 `rateWindowHours`·`rateLimit` 참고), 또는 업스트림 사용량 제한",
   },
   unavailable: {
     status: 503,
