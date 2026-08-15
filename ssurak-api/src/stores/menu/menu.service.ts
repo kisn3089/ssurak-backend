@@ -209,16 +209,15 @@ export class MenuService {
     tx: Tx,
     categoryIds: bigint[]
   ): Promise<number[]> {
-    const cursors = new Map<bigint, number>();
+    const grouped = await tx.menu.groupBy({
+      by: ["categoryId"],
+      where: { categoryId: { in: [...new Set(categoryIds)] }, deletedAt: null },
+      _max: { sortOrder: true },
+    });
 
-    for (const categoryId of new Set(categoryIds)) {
-      const last = await tx.menu.findFirst({
-        where: { categoryId, deletedAt: null },
-        orderBy: { sortOrder: "desc" },
-        select: { sortOrder: true },
-      });
-      cursors.set(categoryId, last?.sortOrder ?? 0);
-    }
+    const cursors = new Map<bigint, number>(
+      grouped.map((row) => [row.categoryId, row._max.sortOrder ?? 0])
+    );
 
     return categoryIds.map((categoryId) => {
       const next = (cursors.get(categoryId) ?? 0) + SORT_ORDER_STEP;

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { mockDeep } from "vitest-mock-extended";
 import { NotFoundException } from "@nestjs/common";
 import { Category, Menu, Owner, Prisma, Store } from "@ssurak/db";
@@ -93,6 +93,14 @@ const service = new MenuService(prisma, storage, menuDraft);
 const prismaPromise = <T>(value: T): Prisma.PrismaPromise<T> =>
   Promise.resolve(value) as Prisma.PrismaPromise<T>;
 
+/**
+ * groupBy는 인자에 따라 반환 타입이 갈리는 제네릭이라 mockDeep이 목 프록시 타입을
+ * 세우지 못한다. 런타임에는 평범한 목이므로 배선용 캐스팅을 한 곳에 가둔다.
+ */
+const groupedSortOrders = (
+  rows: { categoryId: bigint; _max: { sortOrder: number | null } }[]
+) => (prisma.menu.groupBy as unknown as Mock).mockResolvedValue(rows);
+
 /** createMany에 실제로 나간 data 배열. */
 const createdRows = () => {
   const [args] = prisma.menu.createMany.mock.calls.at(-1)!;
@@ -108,7 +116,8 @@ beforeEach(() => {
   prisma.category.findMany.mockResolvedValue([categoryRow]);
   prisma.category.upsert.mockResolvedValue(categoryRow);
   prisma.menu.createMany.mockResolvedValue({ count: 1 });
-  prisma.menu.findFirst.mockResolvedValue(null);
+  // 카테고리별 마지막 sortOrder를 한 번에 읽는다. 빈 배열이면 전부 0에서 시작한다.
+  groupedSortOrders([]);
   prisma.menu.findMany.mockResolvedValue([menuRow]);
 });
 
@@ -248,7 +257,9 @@ describe("MenuService.bulkCreateMenus — 카테고리 해석", () => {
 
 describe("MenuService.bulkCreateMenus — sortOrder", () => {
   it("카테고리 안 마지막 메뉴 뒤에 요청 순서대로 이어 붙인다", async () => {
-    prisma.menu.findFirst.mockResolvedValue({ ...menuRow, sortOrder: 30 });
+    groupedSortOrders([
+      { categoryId: categoryRow.id, _max: { sortOrder: 30 } },
+    ]);
 
     await service.bulkCreateMenus(
       OWNER,
@@ -259,14 +270,14 @@ describe("MenuService.bulkCreateMenus — sortOrder", () => {
     expect(createdRows()).toMatchObject([{ sortOrder: 40 }, { sortOrder: 50 }]);
   });
 
-  it("카테고리별 최대값을 한 번만 읽는다 — 항목마다 읽으면 전부 겹친다", async () => {
+  it("카테고리별 최대값을 한 번만 읽는다 — 카테고리마다 읽으면 트랜잭션이 그만큼 길어진다", async () => {
     await service.bulkCreateMenus(
       OWNER,
       STORE_ID,
       payload([menuItem(), menuItem({ name: "된장찌개" })])
     );
 
-    expect(prisma.menu.findFirst).toHaveBeenCalledTimes(1);
+    expect(prisma.menu.groupBy).toHaveBeenCalledTimes(1);
     expect(createdRows()).toMatchObject([{ sortOrder: 10 }, { sortOrder: 20 }]);
   });
 });
