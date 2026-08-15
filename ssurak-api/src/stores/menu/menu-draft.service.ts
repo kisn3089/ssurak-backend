@@ -66,7 +66,6 @@ export class MenuDraftService {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly configService: ConfigService
   ) {
-    // 기본값은 envSchemas가 쥐고 있다. 여기서 또 fallback을 두면 둘이 갈라진다.
     this.rateLimit = this.configService.getOrThrow<number>(
       "MENU_DRAFT_RATE_LIMIT"
     );
@@ -97,7 +96,6 @@ export class MenuDraftService {
     }
     if (reusable?.kind === "draft") {
       return await this.refreshReused(
-        scope,
         client,
         storeId,
         categories,
@@ -165,12 +163,15 @@ export class MenuDraftService {
     storeId: string,
     draftId: string
   ): Promise<MenuDraftResponse> {
-    const draft = await this.guarded(() =>
-      this.menuDraftStore.find(buildScope(client, storeId), draftId)
-    );
+    const [draft, context] = await Promise.all([
+      this.guarded(() =>
+        this.menuDraftStore.find(buildScope(client, storeId), draftId)
+      ),
+      this.loadContext(client, storeId),
+    ]);
 
     if (!draft) throw notFound();
-    return draft;
+    return { ...draft, items: recomputeMenuDraftIssues(draft.items, context) };
   }
 
   async updateDraftItems(
@@ -209,29 +210,21 @@ export class MenuDraftService {
     }
   }
 
-  /** 재사용하는 초안을 현재 매장 상태로 재계산한다. */
   private async refreshReused(
-    scope: DraftScope,
     client: Owner,
     storeId: string,
     categories: DraftCategoryRef[],
     draft: MenuDraftResponse
   ): Promise<MenuDraftResponse> {
     const existingMenuNames = await this.getExistingMenuNames(client, storeId);
-    const items = recomputeMenuDraftIssues(draft.items, {
-      categories,
-      existingMenuNames,
-    });
 
-    // 저장에 실패해도 재사용 자체를 깨뜨리지 않는다. 이번 응답의 표시는 이미 정확하다.
-    const stored = await this.menuDraftStore
-      .replaceItems(scope, draft.draftId, items)
-      .catch((error: unknown) => {
-        this.logger.warn(`menu draft issue refresh failed: ${String(error)}`);
-        return null;
-      });
-
-    return stored ?? { ...draft, items };
+    return {
+      ...draft,
+      items: recomputeMenuDraftIssues(draft.items, {
+        categories,
+        existingMenuNames,
+      }),
+    };
   }
 
   private async readRateState(

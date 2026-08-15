@@ -288,32 +288,12 @@ describe("MenuDraftService — 재사용", () => {
     expect(vision.extract).not.toHaveBeenCalled();
   });
 
-  it("갱신한 표시를 다시 저장한다 — 조회는 Redis 값을 그대로 내보낸다", async () => {
+  /**
+   * 재사용은 읽기다. 저장하면 updatedAt이 밀려 "마지막 수정 시각"이 다시 올린 시각이 되고,
+   * 저장해둔 표시도 그 뒤 매장이 바뀌면 어차피 낡는다. 내보내는 쪽이 매번 다시 푼다.
+   */
+  it("갱신한 표시를 저장하지는 않는다", async () => {
     prisma.menu.findMany.mockResolvedValue([{ name: "김치찌개" }] as never);
-    store.findOrFailure.mockResolvedValue({
-      kind: "draft",
-      draft: savedDraft({
-        draftId: "AAAAAAAAAAAAAAAAAAAAAA",
-        status: "READY",
-        items: [DRAFT_ITEM],
-        unreadableCount: 0,
-        sourceImages: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }),
-    });
-
-    await service.createDraft(OWNER, STORE_ID, await uploads());
-
-    expect(store.replaceItems).toHaveBeenCalledWith(
-      expect.anything(),
-      "AAAAAAAAAAAAAAAAAAAAAA",
-      [expect.objectContaining({ issues: ["DUPLICATE_NAME"] })]
-    );
-  });
-
-  it("표시 갱신을 저장하지 못해도 재사용 자체는 성공한다", async () => {
-    store.replaceItems.mockRejectedValue(new Error("redis down"));
     store.findOrFailure.mockResolvedValue({
       kind: "draft",
       draft: savedDraft({
@@ -329,7 +309,8 @@ describe("MenuDraftService — 재사용", () => {
 
     const draft = await service.createDraft(OWNER, STORE_ID, await uploads());
 
-    expect(draft.items).toHaveLength(1);
+    expect(draft.items[0].issues).toContain("DUPLICATE_NAME");
+    expect(store.replaceItems).not.toHaveBeenCalled();
   });
 
   it("재사용은 인식 횟수를 차감하지 않는다", async () => {
@@ -418,6 +399,55 @@ describe("MenuDraftService — 조회·수정", () => {
     await expect(service.listDrafts(OWNER, STORE_ID)).rejects.toMatchObject({
       status: HttpStatus.SERVICE_UNAVAILABLE,
     });
+  });
+
+  /**
+   * 일괄 등록을 마친 초안을 다시 열면 그 메뉴들은 이제 매장에 존재한다.
+   * 저장된 issues는 추출 당시 값이라 깨끗한데, 그대로 보여주면 사장님이 또 확정해
+   * 같은 메뉴가 두 벌 생긴다. POST 재사용·PATCH와 같은 기준으로 다시 계산해야 한다.
+   */
+  it("조회 시 issues를 지금 매장 기준으로 다시 계산한다", async () => {
+    store.find.mockResolvedValue(
+      savedDraft({
+        draftId: "AAAAAAAAAAAAAAAAAAAAAA",
+        status: "COMMITTED",
+        // 추출 당시엔 매장에 없던 메뉴라 issues가 비어 있다.
+        items: [DRAFT_ITEM],
+        unreadableCount: 0,
+        sourceImages: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+    );
+    // 그 사이 일괄 등록이 끝나 같은 이름이 매장에 생겼다.
+    prisma.menu.findMany.mockResolvedValue([{ name: "김치찌개" }] as never);
+
+    const draft = await service.getDraft(
+      OWNER,
+      STORE_ID,
+      "AAAAAAAAAAAAAAAAAAAAAA"
+    );
+
+    expect(draft.items[0].issues).toContain("DUPLICATE_NAME");
+  });
+
+  /** 조회는 읽기다. 다시 계산했다고 저장까지 하면 updatedAt이 열어본 시각이 된다. */
+  it("조회는 다시 계산한 결과를 저장하지 않는다", async () => {
+    store.find.mockResolvedValue(
+      savedDraft({
+        draftId: "AAAAAAAAAAAAAAAAAAAAAA",
+        status: "READY",
+        items: [DRAFT_ITEM],
+        unreadableCount: 0,
+        sourceImages: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+    );
+
+    await service.getDraft(OWNER, STORE_ID, "AAAAAAAAAAAAAAAAAAAAAA");
+
+    expect(store.replaceItems).not.toHaveBeenCalled();
   });
 
   it("수정 시 issues를 다시 계산한다", async () => {
