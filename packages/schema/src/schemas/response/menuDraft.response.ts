@@ -109,6 +109,11 @@ export const menuDraftListResponseSchema = z.object({
     .int()
     .nonnegative()
     .describe("점주 기준 초안 추출 가능 최대 횟수."),
+  rateWindowHours: z
+    .number()
+    .int()
+    .nonnegative()
+    .describe("점주 기준 초안 추출 가능 횟수 초기화 주기(시간)"),
 });
 
 export type MenuDraftListResponse = z.infer<typeof menuDraftListResponseSchema>;

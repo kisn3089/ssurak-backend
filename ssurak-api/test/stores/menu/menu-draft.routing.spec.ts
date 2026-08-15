@@ -24,6 +24,7 @@ describe("메뉴 초안 라우팅", () => {
     remaining: 15,
     resetAt: null,
     rateLimit: 15,
+    rateWindowHours: 8,
   };
   const listDrafts = vi.fn().mockResolvedValue(listResponse);
   const menuUnique = vi.fn();

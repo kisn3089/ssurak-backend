@@ -569,12 +569,14 @@ describe("MenuDraftService — 목록의 남은 횟수", () => {
     transaction.exec.mockRejectedValue(new Error("redis down"));
     store.list.mockResolvedValue([DRAFT_SUMMARY]);
 
-    // rateLimit은 설정값이라 Redis가 죽어도 그대로 나간다 — 프론트가 분모는 항상 그린다.
+    // 설정값(rateLimit·rateWindowHours)은 Redis가 죽어도 그대로 나간다 —
+    // 프론트가 "2시간에 5번" 같은 정책 문구는 항상 그릴 수 있다.
     await expect(service.listDrafts(OWNER, STORE_ID)).resolves.toEqual({
       drafts: [DRAFT_SUMMARY],
       remaining: null,
       resetAt: null,
       rateLimit: RATE_LIMIT,
+      rateWindowHours: RATE_WINDOW_HOURS,
     });
   });
 

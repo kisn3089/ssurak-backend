@@ -47,7 +47,7 @@ const TTL_NO_EXPIRY = -1;
 
 type MenuDraftRateState = Pick<
   MenuDraftListResponse,
-  "remaining" | "resetAt" | "rateLimit"
+  "remaining" | "resetAt" | "rateLimit" | "rateWindowHours"
 >;
 
 export interface DraftImageUpload {
@@ -250,11 +250,17 @@ export class MenuDraftService {
           ttlSeconds > 0
             ? new Date(Date.now() + ttlSeconds * 1000).toISOString()
             : null,
+        rateWindowHours: this.rateWindowHours,
       };
     } catch (error: unknown) {
       this.logger.warn(`menu draft rate state unavailable: ${String(error)}`);
       // rateLimit은 설정값이라 Redis 조회가 실패해도 그대로 내보낸다.
-      return { remaining: null, resetAt: null, rateLimit: this.rateLimit };
+      return {
+        remaining: null,
+        resetAt: null,
+        rateLimit: this.rateLimit,
+        rateWindowHours: this.rateWindowHours,
+      };
     }
   }
 
