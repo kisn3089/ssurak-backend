@@ -7,6 +7,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import {
   CopyObjectCommand,
+  DeleteObjectCommand,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -24,8 +25,10 @@ import {
 import {
   menuPrefixOf,
   objectKeyOf,
+  parseMenuPrefix,
   parseOwnedTmpPrefix,
   tmpPrefixOf,
+  trashPrefixOf,
 } from "./image-key";
 import { MAX_INPUT_PIXELS } from "./storage.constants";
 
@@ -153,6 +156,38 @@ export class StorageService {
     return destPrefix;
   }
 
+  async trashMenuImage(imageKey: string): Promise<void> {
+    const id = parseMenuPrefix(imageKey);
+    if (!id) {
+      throw new BadRequestException("유효하지 않은 이미지 키입니다.");
+    }
+
+    const destPrefix = trashPrefixOf(id);
+
+    await Promise.all(
+      MENU_VARIANT_NAMES.map(async (variant) => {
+        const source = objectKeyOf(imageKey, variant);
+
+        try {
+          await this.s3.send(
+            new CopyObjectCommand({
+              Bucket: this.bucket,
+              CopySource: `${this.bucket}/${source}`,
+              Key: objectKeyOf(destPrefix, variant),
+              MetadataDirective: "COPY",
+            })
+          );
+        } catch (error) {
+          if (this.isNoSuchKey(error)) return;
+          throw error;
+        }
+
+        await this.s3.send(
+          new DeleteObjectCommand({ Bucket: this.bucket, Key: source })
+        );
+      })
+    );
+  }
   /**
    * 원본이 규격을 채울 수 있는 크기인지 확인한다.
    * withoutEnlargement 때문에 작은 원본은 확대되지 않아, URL은 정상인데

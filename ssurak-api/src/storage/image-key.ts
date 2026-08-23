@@ -2,6 +2,7 @@ import { isCuid } from "@paralleldrive/cuid2";
 
 const TMP_PREFIX = "tmp";
 const MENU_PREFIX = "menu";
+const TRASH_PREFIX = "trash";
 
 /** 업로드 직후의 임시 prefix. lifecycle 규칙이 하루 뒤 정리한다. */
 export const tmpPrefixOf = (ownerPublicId: string, id: string): string =>
@@ -12,6 +13,23 @@ export const menuPrefixOf = (id: string): string => `${MENU_PREFIX}/${id}`;
 
 export const objectKeyOf = (prefix: string, variant: string): string =>
   `${prefix}/${variant}.webp`;
+
+export const trashPrefixOf = (id: string): string => `${TRASH_PREFIX}/${id}`;
+
+/**
+ * DB의 `imageKey`(`menu/{cuid}`)에서 이미지 id를 뽑는다.
+ * @returns 검증에 통과하면 이미지 id, 아니면 null
+ */
+export function parseMenuPrefix(raw: string): string | null {
+  const parts = raw.split("/");
+  if (parts.length !== 2) return null;
+
+  const [prefix, id] = parts;
+  if (prefix !== MENU_PREFIX) return null;
+  if (!isCuid(id)) return null;
+
+  return id;
+}
 
 /**
  * 클라이언트가 보낸 임시 키가 요청자 본인의 것인지 검증한다.
