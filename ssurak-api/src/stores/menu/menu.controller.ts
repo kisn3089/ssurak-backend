@@ -28,9 +28,11 @@ import {
 import {
   DocsMenuCreate,
   DocsMenuDelete,
+  DocsMenuGetDeletedList,
   DocsMenuGetList,
   DocsMenuGetUnique,
   DocsMenuReorder,
+  DocsMenuRestore,
   DocsMenuUpdate,
 } from "src/docs/menu.docs";
 import { DocsMenuBulkCreate } from "src/docs/menuDraft.docs";
@@ -144,6 +146,20 @@ export class MenuController {
       .map((menu) => PublicMenuDto.schema.parse(menu));
   }
 
+  @Get("deleted")
+  @UseGuards(ZodValidation({ params: storeIdParamsSchema }))
+  @DocsMenuGetDeletedList()
+  async deletedList(
+    @Client() client: Owner,
+    @Param("storeId") storeId: string
+  ): Promise<PublicMenuDto[]> {
+    const deleted = await this.menuService.getRestorableMenus(client, storeId);
+
+    return this.menuImageService
+      .toViewList(deleted)
+      .map((menu) => PublicMenuDto.schema.parse(menu));
+  }
+
   @Get(":menuId")
   @UseGuards(ZodValidation({ params: storeIdAndMenuIdParamsSchema }))
   @DocsMenuGetUnique()
@@ -183,6 +199,23 @@ export class MenuController {
     );
 
     return PublicMenuDto.schema.parse(this.menuImageService.toView(updated));
+  }
+
+  @Patch(":menuId/restore")
+  @UseGuards(ZodValidation({ params: storeIdAndMenuIdParamsSchema }))
+  @DocsMenuRestore()
+  async restore(
+    @Client() client: Owner,
+    @Param("storeId") storeId: string,
+    @Param("menuId") menuId: string
+  ): Promise<PublicMenuDto> {
+    const restored = await this.menuService.restoreMenu(
+      client,
+      storeId,
+      menuId
+    );
+
+    return PublicMenuDto.schema.parse(this.menuImageService.toView(restored));
   }
 
   @Delete(":menuId")

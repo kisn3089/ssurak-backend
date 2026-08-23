@@ -16,4 +16,13 @@ describe("CATEGORIES", () => {
   it("카테고리에 딸린 메뉴도 sortOrder → id 순으로 정렬한다", () => {
     expect(CATEGORIES.include.menus.orderBy).toEqual(SORT_THEN_ID);
   });
+
+  /**
+   * 메뉴판 노출 여부는 "지금 살아 있는가"만 따진다. 회수 보관 기간(3일)은 배치와
+   * 복구가 쓰는 값이라, 그 기준을 여기 끌어오면 삭제된 메뉴가 며칠 더 노출되거나
+   * (`gte`) 살아 있는 메뉴가 통째로 사라진다(`lt`는 NULL을 걸러낸다).
+   */
+  it("소프트 삭제된 메뉴는 시각 조건 없이 즉시 제외한다", () => {
+    expect(CATEGORIES.include.menus.where).toEqual({ deletedAt: null });
+  });
 });
