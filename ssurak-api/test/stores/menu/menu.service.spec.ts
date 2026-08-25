@@ -8,6 +8,7 @@ import { StorageService } from "src/storage/storage.service";
 import { MenuDraftStore } from "src/stores/menu/menu-draft.store";
 import type { CreateMenuPayloadDto } from "src/dto/request/menu.dto";
 import { MENU_RETENTION_MS } from "src/stores/menu/menu-retention.const";
+import { dateBoundOf } from "test/helpers/prisma-where";
 
 const STORE_ID = "store-public-id";
 const TMP_KEY = "tmp/owner-public-id/abc123";
@@ -438,7 +439,7 @@ describe("MenuService 복구", () => {
       category: ownedStoreScope,
     });
 
-    const { gte } = arg.where.deletedAt as { gte: Date };
+    const gte = dateBoundOf(arg.where.deletedAt, "gte");
     expect(gte.getTime()).toBeGreaterThanOrEqual(
       before - MENU_RETENTION_MS - 1_000
     );
@@ -454,7 +455,7 @@ describe("MenuService 복구", () => {
     expect(arg!.where).toMatchObject({ category: ownedStoreScope });
     expect(arg!.orderBy).toEqual({ deletedAt: "desc" });
 
-    const { gte } = arg!.where!.deletedAt as { gte: Date };
+    const gte = dateBoundOf(arg!.where!.deletedAt, "gte");
     expect(gte.getTime()).toBeGreaterThanOrEqual(
       before - MENU_RETENTION_MS - 1_000
     );
