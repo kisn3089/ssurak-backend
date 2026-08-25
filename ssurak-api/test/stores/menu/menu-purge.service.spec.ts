@@ -122,6 +122,32 @@ describe("MenuPurgeService", () => {
     expect(prisma.menu.deleteMany).not.toHaveBeenCalled();
   });
 
+  it("주문 이력이 있는 메뉴의 이미지는 회수 대상에서 아예 뺀다", async () => {
+    stageTargets([], []);
+
+    await service.purgeExpiredMenus();
+
+    // OrderItem.menuImageUrl이 이 객체를 절대 URL로 스냅샷해두므로
+    // trash로 옮기면 과거 주문 내역 썸네일이 깨진다.
+    const [stageOneQuery] = prisma.menu.findMany.mock.calls[0]!;
+    expect(stageOneQuery!.where!.orderItems).toEqual({ none: {} });
+  });
+
+  it("파싱 불가한 imageKey는 S3를 부르지 않고 참조만 끊는다", async () => {
+    stageTargets([{ id: 1n, imageKey: "쓰레기값" }], []);
+
+    const summary = await service.purgeExpiredMenus();
+
+    expect(storage.trashMenuImage).not.toHaveBeenCalled();
+    expect(prisma.menu.update).toHaveBeenCalledWith({
+      where: { id: 1n },
+      data: { imageKey: null },
+    });
+    // 재시도해도 결과가 같은 건이라 imageFailures와 섞지 않는다.
+    expect(summary?.invalidImageKeys).toBe(1);
+    expect(summary?.imageFailures).toBe(0);
+  });
+
   it("실행이 겹치면 두 번째 호출은 건너뛴다", async () => {
     stageTargets([{ id: 1n, imageKey: IMAGE_KEY }], []);
     // 첫 실행을 1단계에서 멈춰 세운 뒤 같은 배치를 다시 호출한다.

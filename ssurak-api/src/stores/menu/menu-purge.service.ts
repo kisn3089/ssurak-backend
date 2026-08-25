@@ -7,17 +7,20 @@ import {
   MENU_RETENTION_DAYS,
   retentionCutoff,
 } from "./menu-retention.const";
+import { parseMenuPrefix } from "src/storage/image-key";
 
 export interface MenuPurgeSummary {
   /** 이미지를 trash로 옮기고 `imageKey`를 비운 메뉴 수 */
   imagesReclaimed: number;
   /** 이미지 회수에 실패해 다음 실행으로 미룬 메뉴 수 */
   imageFailures: number;
+  /** 파싱에 실패한 imageKey 수 */
+  invalidImageKeys: number;
   /** 삭제한 옵션 그룹 수 (선택지는 cascade로 함께 사라진다) */
   optionGroupsDeleted: number;
   /** 행까지 완전히 지운 메뉴 수 */
   menusDeleted: number;
-  /** 주문 이력 때문에 행을 남긴 메뉴 수 */
+  /** 주문 이력 때문에 행과 이미지를 남긴 메뉴 수 */
   tombstones: number;
 }
 
@@ -48,7 +51,7 @@ export class MenuPurgeService implements OnApplicationBootstrap {
 
     try {
       const cutoff = retentionCutoff();
-      const { imagesReclaimed, imageFailures } =
+      const { imagesReclaimed, imageFailures, invalidImageKeys } =
         await this.reclaimImages(cutoff);
       const { optionGroupsDeleted, menusDeleted, tombstones } =
         await this.purgeRows(cutoff);
@@ -56,13 +59,20 @@ export class MenuPurgeService implements OnApplicationBootstrap {
       const summary: MenuPurgeSummary = {
         imagesReclaimed,
         imageFailures,
+        invalidImageKeys,
         optionGroupsDeleted,
         menusDeleted,
         tombstones,
       };
 
       // 아무것도 안 한 실행까지 남기면 로그만 쌓이므로 실제 변화가 있을 때만 남긴다.
-      if (imagesReclaimed || imageFailures || menusDeleted || tombstones) {
+      if (
+        imagesReclaimed ||
+        imageFailures ||
+        invalidImageKeys ||
+        menusDeleted ||
+        tombstones
+      ) {
         this.logger.log(
           `삭제 후 ${MENU_RETENTION_DAYS}일 지난 메뉴 회수 완료 ${JSON.stringify(summary)}`
         );
@@ -80,18 +90,36 @@ export class MenuPurgeService implements OnApplicationBootstrap {
   /** 1단계: 이미지를 trash로 옮기고 참조를 끊는다. */
   private async reclaimImages(cutoff: Date) {
     const targets = await this.prismaService.menu.findMany({
-      where: { deletedAt: { lt: cutoff }, imageKey: { not: null } },
+      where: {
+        deletedAt: { lt: cutoff },
+        imageKey: { not: null },
+        orderItems: { none: {} },
+      },
       select: { id: true, imageKey: true },
       take: MENU_PURGE_BATCH_SIZE,
+      orderBy: { deletedAt: "asc" },
     });
 
     let imagesReclaimed = 0;
     let imageFailures = 0;
+    let invalidImageKeys = 0;
 
     for (const menu of targets) {
       if (!menu.imageKey) continue;
 
       try {
+        if (!parseMenuPrefix(menu.imageKey)) {
+          await this.prismaService.menu.update({
+            where: { id: menu.id },
+            data: { imageKey: null },
+          });
+          invalidImageKeys += 1;
+          this.logger.warn(
+            `파싱 불가한 imageKey를 폐기 — menuId=${menu.id} imageKey=${menu.imageKey}`
+          );
+          continue;
+        }
+
         await this.storageService.trashMenuImage(menu.imageKey);
         await this.prismaService.menu.update({
           where: { id: menu.id },
@@ -107,32 +135,35 @@ export class MenuPurgeService implements OnApplicationBootstrap {
       }
     }
 
-    return { imagesReclaimed, imageFailures };
+    return { imagesReclaimed, imageFailures, invalidImageKeys };
   }
 
-  /** 2단계: 이미지 회수가 끝난 메뉴의 행을 정리한다. */
+  /** 2단계: 이미지 처리가 끝난 메뉴의 행을 정리한다. */
   private async purgeRows(cutoff: Date) {
-    const reclaimed = await this.prismaService.menu.findMany({
+    const targets = await this.prismaService.menu.findMany({
       where: {
         deletedAt: { lt: cutoff },
-        imageKey: null,
-        OR: [{ options: { some: {} } }, { orderItems: { none: {} } }],
+        OR: [
+          { imageKey: null, orderItems: { none: {} } },
+          { orderItems: { some: {} }, options: { some: {} } },
+        ],
       },
       select: { id: true, _count: { select: { orderItems: true } } },
       take: MENU_PURGE_BATCH_SIZE,
+      orderBy: { deletedAt: "asc" },
     });
 
-    if (reclaimed.length === 0) {
+    if (targets.length === 0) {
       return { optionGroupsDeleted: 0, menusDeleted: 0, tombstones: 0 };
     }
 
-    const deletableIds = reclaimed
+    const deletableIds = targets
       .filter((menu) => menu._count.orderItems === 0)
       .map((menu) => menu.id);
 
     const { count: optionGroupsDeleted } =
       await this.prismaService.menuOptionGroup.deleteMany({
-        where: { menuId: { in: reclaimed.map((menu) => menu.id) } },
+        where: { menuId: { in: targets.map((menu) => menu.id) } },
       });
     const { count: menusDeleted } = await this.prismaService.menu.deleteMany({
       where: { id: { in: deletableIds } },
@@ -141,7 +172,7 @@ export class MenuPurgeService implements OnApplicationBootstrap {
     return {
       optionGroupsDeleted,
       menusDeleted,
-      tombstones: reclaimed.length - deletableIds.length,
+      tombstones: targets.length - deletableIds.length,
     };
   }
 }
