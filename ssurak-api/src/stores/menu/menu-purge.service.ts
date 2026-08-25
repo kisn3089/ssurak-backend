@@ -9,8 +9,11 @@ import {
 } from "./menu-retention.const";
 import { parseMenuPrefix } from "src/storage/image-key";
 import { REDLOCK_CLIENT } from "src/redis/redis.module";
-import Redlock, { ExecutionError } from "redlock";
-import type { RedlockAbortSignal } from "redlock";
+import { ExecutionError } from "redlock";
+import type {
+  RedlockAbortSignalLike,
+  RedlockLike,
+} from "src/redis/redlock.types";
 
 const MENU_PURGE_LOCK_KEY = "lock:menu-purge";
 const MENU_PURGE_LOCK_TTL_MS = 10_000;
@@ -40,7 +43,7 @@ export class MenuPurgeService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly storageService: StorageService,
-    @Inject(REDLOCK_CLIENT) private readonly redlock: Redlock
+    @Inject(REDLOCK_CLIENT) private readonly redlock: RedlockLike
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_5AM)
@@ -51,7 +54,7 @@ export class MenuPurgeService {
         [MENU_PURGE_LOCK_KEY],
         MENU_PURGE_LOCK_TTL_MS,
         { retryCount: 0 },
-        async (signal: RedlockAbortSignal) => {
+        async (signal: RedlockAbortSignalLike) => {
           const cutoff = retentionCutoff();
           const { imagesReclaimed, imageFailures, invalidImageKeys } =
             await this.reclaimImages(cutoff);

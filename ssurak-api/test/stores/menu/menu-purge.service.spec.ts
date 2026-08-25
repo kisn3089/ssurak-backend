@@ -1,48 +1,51 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockDeep } from "vitest-mock-extended";
 import { ExecutionError } from "redlock";
+import type { Menu, Prisma } from "@ssurak/db";
 import { PrismaService } from "src/prisma/prisma.service";
 import { StorageService } from "src/storage/storage.service";
+import type { RedlockLike } from "src/redis/redlock.types";
 import { MenuPurgeService } from "src/stores/menu/menu-purge.service";
 import { MENU_RETENTION_MS } from "src/stores/menu/menu-retention.const";
+import { dateBoundOf } from "test/helpers/prisma-where";
 
 const IMAGE_KEY = "menu/vces0z57pr4vwbhbmlnbzb5a";
 
 const prisma = mockDeep<PrismaService>();
 const storage = mockDeep<StorageService>();
 
+/** 기본 구현은 락을 바로 내주고 루틴을 그대로 실행한다. */
+const redlock = mockDeep<RedlockLike>();
+redlock.using.mockImplementation(
+  async (_resources, _duration, _settings, routine) =>
+    await routine({ aborted: false })
+);
+
+const service = new MenuPurgeService(prisma, storage, redlock);
+
+/** 서비스가 각 단계에서 실제로 select하는 모양. select가 바뀌면 픽스처도 같이 깨진다. */
+type ImageTarget = Prisma.MenuGetPayload<{
+  select: { id: true; imageKey: true };
+}>;
+type PurgeTarget = Prisma.MenuGetPayload<{
+  select: { id: true; _count: { select: { orderItems: true } } };
+}>;
+
 /**
- * redlock은 타입이 any로 새는 패키지라 mockDeep이 의미가 없다(package.json
- * exports에 types 조건이 없어 nodenext가 선언을 못 찾는다). 손으로 건다.
- * 기본 구현은 락을 바로 내주고 루틴을 그대로 실행한다.
+ * 1단계 대상(이미지 보유) / 2단계 대상(이미지 회수 완료) 응답을 순서대로 물린다.
+ * mockDeep은 findMany의 제네릭을 기본값(Menu[])으로 접어버려 select 결과를 그대로
+ * 못 받는다. 픽스처는 위 페이로드 타입으로 검사하고, 단언은 이 한 곳에 가둔다.
  */
-const redlock = {
-  using: vi.fn(
-    async (
-      _keys: string[],
-      _ttl: number,
-      _settings: unknown,
-      routine: (signal: { aborted: boolean; error?: Error }) => Promise<unknown>
-    ) => await routine({ aborted: false })
-  ),
-};
-
-const service = new MenuPurgeService(prisma, storage, redlock as never);
-
-/** 1단계 대상(이미지 보유) / 2단계 대상(이미지 회수 완료) 응답을 순서대로 물린다. */
-const stageTargets = (
-  withImage: { id: bigint; imageKey: string | null }[],
-  reclaimed: { id: bigint; _count: { orderItems: number } }[]
-) => {
+const stageTargets = (withImage: ImageTarget[], reclaimed: PurgeTarget[]) => {
   prisma.menu.findMany
-    .mockResolvedValueOnce(withImage as never)
-    .mockResolvedValueOnce(reclaimed as never);
+    .mockResolvedValueOnce(withImage as unknown as Menu[])
+    .mockResolvedValueOnce(reclaimed as unknown as Menu[]);
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
-  prisma.menuOptionGroup.deleteMany.mockResolvedValue({ count: 0 } as never);
-  prisma.menu.deleteMany.mockResolvedValue({ count: 0 } as never);
+  prisma.menuOptionGroup.deleteMany.mockResolvedValue({ count: 0 });
+  prisma.menu.deleteMany.mockResolvedValue({ count: 0 });
 });
 
 describe("MenuPurgeService", () => {
@@ -53,7 +56,7 @@ describe("MenuPurgeService", () => {
     await service.purgeExpiredMenus();
 
     const [firstQuery] = prisma.menu.findMany.mock.calls[0]!;
-    const cutoff = (firstQuery!.where!.deletedAt as { lt: Date }).lt;
+    const cutoff = dateBoundOf(firstQuery!.where!.deletedAt, "lt");
 
     // 지금으로부터 보관 기간 이전 시각이어야 한다(실행 시간만큼의 오차 허용).
     expect(cutoff.getTime()).toBeGreaterThanOrEqual(
@@ -111,8 +114,8 @@ describe("MenuPurgeService", () => {
         { id: 2n, _count: { orderItems: 3 } },
       ]
     );
-    prisma.menuOptionGroup.deleteMany.mockResolvedValue({ count: 5 } as never);
-    prisma.menu.deleteMany.mockResolvedValue({ count: 1 } as never);
+    prisma.menuOptionGroup.deleteMany.mockResolvedValue({ count: 5 });
+    prisma.menu.deleteMany.mockResolvedValue({ count: 1 });
 
     const summary = await service.purgeExpiredMenus();
 
@@ -175,9 +178,9 @@ describe("MenuPurgeService", () => {
   });
 
   it("1단계 도중 락을 잃으면 되돌릴 수 없는 2단계를 시작하지 않는다", async () => {
-    prisma.menu.findMany.mockResolvedValueOnce([] as never);
+    prisma.menu.findMany.mockResolvedValueOnce([]);
     redlock.using.mockImplementationOnce(
-      async (_keys, _ttl, _settings, routine) =>
+      async (_resources, _duration, _settings, routine) =>
         await routine({ aborted: true, error: new Error("락 상실") })
     );
 
