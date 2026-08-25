@@ -1,6 +1,9 @@
 import { applyDecorators } from "@nestjs/common";
 import { ApiBody, ApiOperation, ApiParam, ApiResponse } from "@nestjs/swagger";
-import { PublicMenuDto } from "src/dto/response/menu.dto";
+import {
+  PublicMenuDto,
+  PublicRestorableMenuDto,
+} from "src/dto/response/menu.dto";
 import {
   CreateMenuPayloadDto,
   ReorderMenusPayloadDto,
@@ -119,7 +122,7 @@ export const DocsMenuGetDeletedList = () =>
   applyDecorators(
     ApiOperation({ summary: meta.getDeletedList.summary }),
     ApiParam(paramsDocs.storeId),
-    ApiResponse({ ...meta.getDeletedList.ok, type: [PublicMenuDto] }),
+    ApiResponse({ ...meta.getDeletedList.ok, type: [PublicRestorableMenuDto] }),
     ApiResponse(meta.unauthorized)
   );
 

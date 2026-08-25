@@ -16,7 +16,10 @@ import type { Owner } from "@ssurak/db";
 import { MenuImageService } from "src/common/image/menu-image.service";
 import { ZodValidation } from "src/utils/guards/zod-validation.guard";
 import { Client } from "src/decorators/client.decorator";
-import { PublicMenuDto } from "../../dto/response/menu.dto";
+import {
+  PublicMenuDto,
+  PublicRestorableMenuDto,
+} from "../../dto/response/menu.dto";
 import {
   bulkCreateMenusPayloadSchema,
   createMenuPayloadSchema,
@@ -152,12 +155,12 @@ export class MenuController {
   async deletedList(
     @Client() client: Owner,
     @Param("storeId") storeId: string
-  ): Promise<PublicMenuDto[]> {
+  ): Promise<PublicRestorableMenuDto[]> {
     const deleted = await this.menuService.getRestorableMenus(client, storeId);
 
     return this.menuImageService
       .toViewList(deleted)
-      .map((menu) => PublicMenuDto.schema.parse(menu));
+      .map((menu) => PublicRestorableMenuDto.schema.parse(menu));
   }
 
   @Get(":menuId")

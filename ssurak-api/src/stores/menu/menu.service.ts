@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { createId } from "@paralleldrive/cuid2";
 import { PrismaService } from "src/prisma/prisma.service";
-import { Owner, Prisma, PublicMenu } from "@ssurak/db";
+import { Owner, Prisma, PublicMenu, PublicRestorableMenu } from "@ssurak/db";
 import type { BulkMenuItem } from "@ssurak/schema";
 import {
   BulkCreateMenusPayloadDto,
@@ -29,7 +29,11 @@ import {
   normalizeNameValue,
 } from "src/utils/helper/normalizeName";
 import { MenuDraftStore } from "./menu-draft.store";
-import { MENU_RETENTION_DAYS, retentionCutoff } from "./menu-retention.const";
+import {
+  MENU_RETENTION_DAYS,
+  MENU_RETENTION_MS,
+  retentionCutoff,
+} from "./menu-retention.const";
 
 const BULK_TX_TIMEOUT_MS = 15_000;
 
@@ -395,8 +399,8 @@ export class MenuService {
   async getRestorableMenus(
     client: Owner,
     storeId: string
-  ): Promise<PublicMenu[]> {
-    return await this.prismaService.menu.findMany({
+  ): Promise<PublicRestorableMenu[]> {
+    const deleted = await this.prismaService.menu.findMany({
       where: {
         category: this.whereInStore(client, storeId),
         deletedAt: { gte: retentionCutoff() },
@@ -405,6 +409,20 @@ export class MenuService {
       orderBy: { deletedAt: "desc" },
       omit: OMIT_MENU_PRIVATE,
     });
+
+    return deleted.flatMap((menu) =>
+      menu.deletedAt
+        ? [
+            {
+              ...menu,
+              deletedAt: menu.deletedAt,
+              restorableUntil: new Date(
+                menu.deletedAt.getTime() + MENU_RETENTION_MS
+              ),
+            },
+          ]
+        : []
+    );
   }
 
   async restoreMenu(
@@ -419,6 +437,7 @@ export class MenuService {
           deletedAt: { gte: retentionCutoff() },
         },
         data: { deletedAt: null },
+        omit: OMIT_MENU_PRIVATE,
       });
     } catch (error) {
       if (

@@ -3,6 +3,7 @@ import type {
   MenuImages,
   Menu,
   MenuWithOptions,
+  RestorableMenu,
 } from "../../types/menu/menu.interface";
 import { isoDateTime } from "./common.response";
 import { publicMenuOptionGroupSchema } from "./menuOption.response";
@@ -39,6 +40,13 @@ export const publicMenuSchema = z.object({
         "복구 목록(`GET /menus/deleted`)에서만 값이 실린다."
     ),
 }) satisfies z.ZodType<Menu, z.ZodTypeDef, unknown>;
+
+export const publicRestorableMenuSchema = publicMenuSchema.extend({
+  deletedAt: isoDateTime().describe("소프트 삭제 시각"),
+  restorableUntil: isoDateTime().describe(
+    "복구 가능 시각. 이 시각 이후에는 메뉴를 복구할 수 없다."
+  ),
+}) satisfies z.ZodType<RestorableMenu, z.ZodTypeDef, unknown>;
 
 /** 고객 메뉴판용. 주문 화면을 한 번에 그려야 하므로 옵션까지 실어 내려준다. */
 export const publicMenuWithOptionsSchema = publicMenuSchema.extend({
