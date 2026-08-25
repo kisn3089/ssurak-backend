@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockDeep } from "vitest-mock-extended";
+import { ExecutionError } from "redlock";
 import { PrismaService } from "src/prisma/prisma.service";
 import { StorageService } from "src/storage/storage.service";
 import { MenuPurgeService } from "src/stores/menu/menu-purge.service";
@@ -10,7 +11,23 @@ const IMAGE_KEY = "menu/vces0z57pr4vwbhbmlnbzb5a";
 const prisma = mockDeep<PrismaService>();
 const storage = mockDeep<StorageService>();
 
-const service = new MenuPurgeService(prisma, storage);
+/**
+ * redlock은 타입이 any로 새는 패키지라 mockDeep이 의미가 없다(package.json
+ * exports에 types 조건이 없어 nodenext가 선언을 못 찾는다). 손으로 건다.
+ * 기본 구현은 락을 바로 내주고 루틴을 그대로 실행한다.
+ */
+const redlock = {
+  using: vi.fn(
+    async (
+      _keys: string[],
+      _ttl: number,
+      _settings: unknown,
+      routine: (signal: { aborted: boolean; error?: Error }) => Promise<unknown>
+    ) => await routine({ aborted: false })
+  ),
+};
+
+const service = new MenuPurgeService(prisma, storage, redlock as never);
 
 /** 1단계 대상(이미지 보유) / 2단계 대상(이미지 회수 완료) 응답을 순서대로 물린다. */
 const stageTargets = (
@@ -148,25 +165,28 @@ describe("MenuPurgeService", () => {
     expect(summary?.imageFailures).toBe(0);
   });
 
-  it("실행이 겹치면 두 번째 호출은 건너뛴다", async () => {
-    stageTargets([{ id: 1n, imageKey: IMAGE_KEY }], []);
-    // 첫 실행을 1단계에서 멈춰 세운 뒤 같은 배치를 다시 호출한다.
-    let releaseFirstRun!: () => void;
-    storage.trashMenuImage.mockReturnValueOnce(
-      new Promise<void>((resolve) => {
-        releaseFirstRun = resolve;
-      })
+  it("다른 인스턴스가 실행 중이면 락을 얻지 못해 건너뛴다", async () => {
+    redlock.using.mockRejectedValueOnce(
+      new ExecutionError("quorum을 얻지 못했습니다.", [])
     );
 
-    const running = service.purgeExpiredMenus();
     await expect(service.purgeExpiredMenus()).resolves.toBeNull();
-
-    releaseFirstRun();
-    await running;
-    expect(storage.trashMenuImage).toHaveBeenCalledTimes(1);
+    expect(prisma.menu.findMany).not.toHaveBeenCalled();
   });
 
-  it("배치가 실패해도 예외를 밖으로 던지지 않는다(부팅을 막지 않는다)", async () => {
+  it("1단계 도중 락을 잃으면 되돌릴 수 없는 2단계를 시작하지 않는다", async () => {
+    prisma.menu.findMany.mockResolvedValueOnce([] as never);
+    redlock.using.mockImplementationOnce(
+      async (_keys, _ttl, _settings, routine) =>
+        await routine({ aborted: true, error: new Error("락 상실") })
+    );
+
+    await expect(service.purgeExpiredMenus()).resolves.toBeNull();
+    expect(prisma.menuOptionGroup.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.menu.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("배치가 실패해도 예외를 밖으로 던지지 않는다(크론을 죽이지 않는다)", async () => {
     prisma.menu.findMany.mockRejectedValueOnce(new Error("DB down"));
 
     await expect(service.purgeExpiredMenus()).resolves.toBeNull();

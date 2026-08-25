@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { PrismaService } from "src/prisma/prisma.service";
 import { StorageService } from "src/storage/storage.service";
@@ -8,6 +8,15 @@ import {
   retentionCutoff,
 } from "./menu-retention.const";
 import { parseMenuPrefix } from "src/storage/image-key";
+import { REDLOCK_CLIENT } from "src/redis/redis.module";
+import Redlock, { ExecutionError } from "redlock";
+import type { RedlockAbortSignal } from "redlock";
+
+const MENU_PURGE_LOCK_KEY = "lock:menu-purge";
+const MENU_PURGE_LOCK_TTL_MS = 10_000;
+
+const isExecutionError = (error: unknown): error is Error =>
+  error instanceof ExecutionError;
 
 export interface MenuPurgeSummary {
   /** 이미지를 trash로 옮기고 `imageKey`를 비운 메뉴 수 */
@@ -25,53 +34,52 @@ export interface MenuPurgeSummary {
 }
 
 @Injectable()
-export class MenuPurgeService implements OnApplicationBootstrap {
+export class MenuPurgeService {
   private readonly logger = new Logger(MenuPurgeService.name);
-  private isRunning = false;
 
   constructor(
     private readonly prismaService: PrismaService,
-    private readonly storageService: StorageService
+    private readonly storageService: StorageService,
+    @Inject(REDLOCK_CLIENT) private readonly redlock: Redlock
   ) {}
-
-  onApplicationBootstrap(): void {
-    void this.purgeExpiredMenus();
-  }
 
   @Cron(CronExpression.EVERY_DAY_AT_5AM)
   async purgeExpiredMenus(): Promise<MenuPurgeSummary | null> {
-    // 크론과 수동 실행이 겹치면 같은 메뉴를 두 번 옮기게 되므로 한 번에 하나만 돈다.
-    if (this.isRunning) {
-      this.logger.warn(
-        "이전 회수 배치가 아직 실행 중이라 이번 실행은 건너뜁니다."
-      );
-      return null;
-    }
-    this.isRunning = true;
-
     try {
-      const cutoff = retentionCutoff();
-      const { imagesReclaimed, imageFailures, invalidImageKeys } =
-        await this.reclaimImages(cutoff);
-      const { optionGroupsDeleted, menusDeleted, tombstones } =
-        await this.purgeRows(cutoff);
+      // retryCount: 0 — 다른 인스턴스가 이미 돌고 있으면 기다리지 않고 넘긴다.
+      const summary: MenuPurgeSummary = await this.redlock.using(
+        [MENU_PURGE_LOCK_KEY],
+        MENU_PURGE_LOCK_TTL_MS,
+        { retryCount: 0 },
+        async (signal: RedlockAbortSignal) => {
+          const cutoff = retentionCutoff();
+          const { imagesReclaimed, imageFailures, invalidImageKeys } =
+            await this.reclaimImages(cutoff);
 
-      const summary: MenuPurgeSummary = {
-        imagesReclaimed,
-        imageFailures,
-        invalidImageKeys,
-        optionGroupsDeleted,
-        menusDeleted,
-        tombstones,
-      };
+          if (signal.aborted) {
+            throw signal.error ?? new Error("회수 배치가 락을 잃었습니다.");
+          }
 
-      // 아무것도 안 한 실행까지 남기면 로그만 쌓이므로 실제 변화가 있을 때만 남긴다.
+          const { optionGroupsDeleted, menusDeleted, tombstones } =
+            await this.purgeRows(cutoff);
+
+          return {
+            imagesReclaimed,
+            imageFailures,
+            invalidImageKeys,
+            optionGroupsDeleted,
+            menusDeleted,
+            tombstones,
+          };
+        }
+      );
+
       if (
-        imagesReclaimed ||
-        imageFailures ||
-        invalidImageKeys ||
-        menusDeleted ||
-        tombstones
+        summary.imagesReclaimed ||
+        summary.imageFailures ||
+        summary.invalidImageKeys ||
+        summary.menusDeleted ||
+        summary.tombstones
       ) {
         this.logger.log(
           `삭제 후 ${MENU_RETENTION_DAYS}일 지난 메뉴 회수 완료 ${JSON.stringify(summary)}`
@@ -80,10 +88,14 @@ export class MenuPurgeService implements OnApplicationBootstrap {
 
       return summary;
     } catch (error) {
+      if (isExecutionError(error)) {
+        this.logger.warn(
+          `회수 배치 락을 얻지 못해 이번 실행을 건너뜁니다: ${error.message}`
+        );
+        return null;
+      }
       this.logger.error("메뉴 회수 배치가 실패했습니다.", error);
       return null;
-    } finally {
-      this.isRunning = false;
     }
   }
 
