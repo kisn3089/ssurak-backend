@@ -123,8 +123,13 @@ async function main() {
 
   // createMany는 중첩 쓰기를 못 하므로 메뉴마다 upsert한다.
   // update 쪽에서 옵션을 통째로 갈아끼우므로 재시드하면 옵션 정의도 함께 갱신된다.
+  //
+  // imageKey만은 update에서 제외한다. 픽스처의 키는 특정 환경 버킷의 객체 주소라
+  // 재시드가 콘솔에서 교체한 이미지를 하드코딩 값으로 되돌려버리고, 그 키의 객체가
+  // 그 환경 버킷에 없으면 API는 200을 주는데 브라우저에서만 이미지가 깨진다.
+  // 최초 생성 시에만 샘플 이미지를 붙이고, 이후 운영 중 교체분은 그대로 둔다.
   for (const [index, store] of [demoStore, testStore].entries()) {
-    for (const { category, options, ...menu } of menuSeeds) {
+    for (const { category, options, imageKey, ...menu } of menuSeeds) {
       const publicId = suffixed(menu.publicId, index);
       const categoryId = categoryMapByStore.get(store.id)!.get(category)!;
       const optionCreate = toOptionGroupSeedInput(options, index);
@@ -139,6 +144,7 @@ async function main() {
         },
         create: {
           ...menu,
+          imageKey,
           publicId,
           categoryId,
           options: { create: optionCreate },

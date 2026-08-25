@@ -16,7 +16,10 @@ import type { Owner } from "@ssurak/db";
 import { MenuImageService } from "src/common/image/menu-image.service";
 import { ZodValidation } from "src/utils/guards/zod-validation.guard";
 import { Client } from "src/decorators/client.decorator";
-import { PublicMenuDto } from "../../dto/response/menu.dto";
+import {
+  PublicMenuDto,
+  PublicRestorableMenuDto,
+} from "../../dto/response/menu.dto";
 import {
   bulkCreateMenusPayloadSchema,
   createMenuPayloadSchema,
@@ -28,9 +31,11 @@ import {
 import {
   DocsMenuCreate,
   DocsMenuDelete,
+  DocsMenuGetDeletedList,
   DocsMenuGetList,
   DocsMenuGetUnique,
   DocsMenuReorder,
+  DocsMenuRestore,
   DocsMenuUpdate,
 } from "src/docs/menu.docs";
 import { DocsMenuBulkCreate } from "src/docs/menuDraft.docs";
@@ -144,6 +149,20 @@ export class MenuController {
       .map((menu) => PublicMenuDto.schema.parse(menu));
   }
 
+  @Get("deleted")
+  @UseGuards(ZodValidation({ params: storeIdParamsSchema }))
+  @DocsMenuGetDeletedList()
+  async deletedList(
+    @Client() client: Owner,
+    @Param("storeId") storeId: string
+  ): Promise<PublicRestorableMenuDto[]> {
+    const deleted = await this.menuService.getRestorableMenus(client, storeId);
+
+    return this.menuImageService
+      .toViewList(deleted)
+      .map((menu) => PublicRestorableMenuDto.schema.parse(menu));
+  }
+
   @Get(":menuId")
   @UseGuards(ZodValidation({ params: storeIdAndMenuIdParamsSchema }))
   @DocsMenuGetUnique()
@@ -183,6 +202,23 @@ export class MenuController {
     );
 
     return PublicMenuDto.schema.parse(this.menuImageService.toView(updated));
+  }
+
+  @Patch(":menuId/restore")
+  @UseGuards(ZodValidation({ params: storeIdAndMenuIdParamsSchema }))
+  @DocsMenuRestore()
+  async restore(
+    @Client() client: Owner,
+    @Param("storeId") storeId: string,
+    @Param("menuId") menuId: string
+  ): Promise<PublicMenuDto> {
+    const restored = await this.menuService.restoreMenu(
+      client,
+      storeId,
+      menuId
+    );
+
+    return PublicMenuDto.schema.parse(this.menuImageService.toView(restored));
   }
 
   @Delete(":menuId")

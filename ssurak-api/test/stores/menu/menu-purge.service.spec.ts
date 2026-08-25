@@ -1,0 +1,194 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mockDeep } from "vitest-mock-extended";
+import { ExecutionError } from "redlock";
+import { PrismaService } from "src/prisma/prisma.service";
+import { StorageService } from "src/storage/storage.service";
+import { MenuPurgeService } from "src/stores/menu/menu-purge.service";
+import { MENU_RETENTION_MS } from "src/stores/menu/menu-retention.const";
+
+const IMAGE_KEY = "menu/vces0z57pr4vwbhbmlnbzb5a";
+
+const prisma = mockDeep<PrismaService>();
+const storage = mockDeep<StorageService>();
+
+/**
+ * redlock은 타입이 any로 새는 패키지라 mockDeep이 의미가 없다(package.json
+ * exports에 types 조건이 없어 nodenext가 선언을 못 찾는다). 손으로 건다.
+ * 기본 구현은 락을 바로 내주고 루틴을 그대로 실행한다.
+ */
+const redlock = {
+  using: vi.fn(
+    async (
+      _keys: string[],
+      _ttl: number,
+      _settings: unknown,
+      routine: (signal: { aborted: boolean; error?: Error }) => Promise<unknown>
+    ) => await routine({ aborted: false })
+  ),
+};
+
+const service = new MenuPurgeService(prisma, storage, redlock as never);
+
+/** 1단계 대상(이미지 보유) / 2단계 대상(이미지 회수 완료) 응답을 순서대로 물린다. */
+const stageTargets = (
+  withImage: { id: bigint; imageKey: string | null }[],
+  reclaimed: { id: bigint; _count: { orderItems: number } }[]
+) => {
+  prisma.menu.findMany
+    .mockResolvedValueOnce(withImage as never)
+    .mockResolvedValueOnce(reclaimed as never);
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  prisma.menuOptionGroup.deleteMany.mockResolvedValue({ count: 0 } as never);
+  prisma.menu.deleteMany.mockResolvedValue({ count: 0 } as never);
+});
+
+describe("MenuPurgeService", () => {
+  it("보관 기간이 지난 삭제만 대상으로 삼는다", async () => {
+    stageTargets([], []);
+
+    const before = Date.now();
+    await service.purgeExpiredMenus();
+
+    const [firstQuery] = prisma.menu.findMany.mock.calls[0]!;
+    const cutoff = (firstQuery!.where!.deletedAt as { lt: Date }).lt;
+
+    // 지금으로부터 보관 기간 이전 시각이어야 한다(실행 시간만큼의 오차 허용).
+    expect(cutoff.getTime()).toBeGreaterThanOrEqual(
+      before - MENU_RETENTION_MS - 1_000
+    );
+    expect(cutoff.getTime()).toBeLessThanOrEqual(
+      Date.now() - MENU_RETENTION_MS
+    );
+  });
+
+  it("이미지를 trash로 옮긴 뒤에만 imageKey를 비운다", async () => {
+    stageTargets([{ id: 1n, imageKey: IMAGE_KEY }], []);
+
+    const summary = await service.purgeExpiredMenus();
+
+    expect(storage.trashMenuImage).toHaveBeenCalledWith(IMAGE_KEY);
+    expect(prisma.menu.update).toHaveBeenCalledWith({
+      where: { id: 1n },
+      data: { imageKey: null },
+    });
+    expect(summary?.imagesReclaimed).toBe(1);
+  });
+
+  it("이미지 이동이 실패하면 imageKey를 남겨 다음 실행이 재시도하게 한다", async () => {
+    stageTargets([{ id: 1n, imageKey: IMAGE_KEY }], []);
+    storage.trashMenuImage.mockRejectedValueOnce(new Error("S3 down"));
+
+    const summary = await service.purgeExpiredMenus();
+
+    expect(prisma.menu.update).not.toHaveBeenCalled();
+    expect(summary).toMatchObject({ imagesReclaimed: 0, imageFailures: 1 });
+  });
+
+  it("한 건이 실패해도 나머지 메뉴는 계속 처리한다", async () => {
+    stageTargets(
+      [
+        { id: 1n, imageKey: IMAGE_KEY },
+        { id: 2n, imageKey: IMAGE_KEY },
+      ],
+      []
+    );
+    storage.trashMenuImage.mockRejectedValueOnce(new Error("S3 down"));
+
+    const summary = await service.purgeExpiredMenus();
+
+    expect(storage.trashMenuImage).toHaveBeenCalledTimes(2);
+    expect(summary).toMatchObject({ imagesReclaimed: 1, imageFailures: 1 });
+  });
+
+  it("주문 이력이 없는 메뉴만 행까지 지우고 나머지는 tombstone으로 남긴다", async () => {
+    stageTargets(
+      [],
+      [
+        { id: 1n, _count: { orderItems: 0 } },
+        { id: 2n, _count: { orderItems: 3 } },
+      ]
+    );
+    prisma.menuOptionGroup.deleteMany.mockResolvedValue({ count: 5 } as never);
+    prisma.menu.deleteMany.mockResolvedValue({ count: 1 } as never);
+
+    const summary = await service.purgeExpiredMenus();
+
+    // 옵션은 주문 이력과 무관하게 전부, 행 삭제는 이력 없는 것만.
+    expect(prisma.menuOptionGroup.deleteMany).toHaveBeenCalledWith({
+      where: { menuId: { in: [1n, 2n] } },
+    });
+    expect(prisma.menu.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: [1n] } },
+    });
+    expect(summary).toMatchObject({
+      optionGroupsDeleted: 5,
+      menusDeleted: 1,
+      tombstones: 1,
+    });
+  });
+
+  it("정리할 행이 없으면 삭제 쿼리를 아예 보내지 않는다", async () => {
+    stageTargets([], []);
+
+    await service.purgeExpiredMenus();
+
+    expect(prisma.menuOptionGroup.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.menu.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("주문 이력이 있는 메뉴의 이미지는 회수 대상에서 아예 뺀다", async () => {
+    stageTargets([], []);
+
+    await service.purgeExpiredMenus();
+
+    // OrderItem.menuImageUrl이 이 객체를 절대 URL로 스냅샷해두므로
+    // trash로 옮기면 과거 주문 내역 썸네일이 깨진다.
+    const [stageOneQuery] = prisma.menu.findMany.mock.calls[0]!;
+    expect(stageOneQuery!.where!.orderItems).toEqual({ none: {} });
+  });
+
+  it("파싱 불가한 imageKey는 S3를 부르지 않고 참조만 끊는다", async () => {
+    stageTargets([{ id: 1n, imageKey: "쓰레기값" }], []);
+
+    const summary = await service.purgeExpiredMenus();
+
+    expect(storage.trashMenuImage).not.toHaveBeenCalled();
+    expect(prisma.menu.update).toHaveBeenCalledWith({
+      where: { id: 1n },
+      data: { imageKey: null },
+    });
+    // 재시도해도 결과가 같은 건이라 imageFailures와 섞지 않는다.
+    expect(summary?.invalidImageKeys).toBe(1);
+    expect(summary?.imageFailures).toBe(0);
+  });
+
+  it("다른 인스턴스가 실행 중이면 락을 얻지 못해 건너뛴다", async () => {
+    redlock.using.mockRejectedValueOnce(
+      new ExecutionError("quorum을 얻지 못했습니다.", [])
+    );
+
+    await expect(service.purgeExpiredMenus()).resolves.toBeNull();
+    expect(prisma.menu.findMany).not.toHaveBeenCalled();
+  });
+
+  it("1단계 도중 락을 잃으면 되돌릴 수 없는 2단계를 시작하지 않는다", async () => {
+    prisma.menu.findMany.mockResolvedValueOnce([] as never);
+    redlock.using.mockImplementationOnce(
+      async (_keys, _ttl, _settings, routine) =>
+        await routine({ aborted: true, error: new Error("락 상실") })
+    );
+
+    await expect(service.purgeExpiredMenus()).resolves.toBeNull();
+    expect(prisma.menuOptionGroup.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.menu.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("배치가 실패해도 예외를 밖으로 던지지 않는다(크론을 죽이지 않는다)", async () => {
+    prisma.menu.findMany.mockRejectedValueOnce(new Error("DB down"));
+
+    await expect(service.purgeExpiredMenus()).resolves.toBeNull();
+  });
+});

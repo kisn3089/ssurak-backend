@@ -121,9 +121,14 @@ export const AMERICANO_OPTION_IDS = {
 // publicId는 매장별로 seed.ts에서 index suffix를 붙여 유일성을 확보한다.
 // 옵션 그룹·선택지 publicId와 trigger의 참조 id에도 같은 suffix가 붙는다.
 //
-// imageKey는 운영 CDN에 올려둔 샘플 이미지를 가리킨다.
-// 이미지를 보려면 각 prefix 아래에 hero.webp / thumbnail.webp가 있어야 한다.
-// 없어도 시드와 API는 정상 동작하고 이미지만 깨져 보인다.
+// imageKey는 샘플 이미지의 S3 object key prefix다. **메뉴를 새로 만들 때만** 쓰이고
+// 재시드에서는 갱신하지 않는다(seed.ts 의 upsert update 에서 제외) — 콘솔에서 교체한
+// 이미지를 하드코딩 값으로 되돌리지 않기 위해서다.
+//
+// 주의: 이 값은 환경(버킷)에 종속된 주소라 dev/prod 사이에 그대로 옮겨 쓰면 안 된다.
+// 시드를 돌릴 환경의 버킷에 각 prefix 아래 hero.webp / thumbnail.webp가 실제로
+// 있어야 하며, 없어도 시드와 API는 200으로 정상 동작하고 브라우저에서만 깨진다.
+// (2026-08-18: 아래 키들이 dev 버킷에만 있어 운영 이미지가 502로 깨진 적 있음)
 export const menuSeeds: MenuSeed[] = [
   {
     publicId: "rbay46e0wjrj7n1h1q2ain8",

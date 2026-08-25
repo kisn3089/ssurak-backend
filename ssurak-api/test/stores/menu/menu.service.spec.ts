@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { mockDeep } from "vitest-mock-extended";
 import { HttpException, NotFoundException } from "@nestjs/common";
-import { Category, Menu, Owner } from "@ssurak/db";
+import { Category, Menu, Owner, Prisma } from "@ssurak/db";
 import { MenuService } from "src/stores/menu/menu.service";
 import { PrismaService } from "src/prisma/prisma.service";
 import { StorageService } from "src/storage/storage.service";
 import { MenuDraftStore } from "src/stores/menu/menu-draft.store";
 import type { CreateMenuPayloadDto } from "src/dto/request/menu.dto";
+import { MENU_RETENTION_MS } from "src/stores/menu/menu-retention.const";
 
 const STORE_ID = "store-public-id";
 const TMP_KEY = "tmp/owner-public-id/abc123";
@@ -417,5 +418,59 @@ describe("MenuService 소유자 스코프", () => {
       publicId: "menu-public-id",
       category: ownedStoreScope,
     });
+  });
+});
+
+/**
+ * 복구는 배치가 이미지를 회수하기 전(보관 기간 내)에만 허용해야 한다.
+ * 기간이 지난 메뉴를 되살리면 존재하지 않는 객체를 가리키는 imageKey가 함께 살아난다.
+ */
+describe("MenuService 복구", () => {
+  it("보관 기간 내 삭제만 복구 대상으로 좁힌다", async () => {
+    const before = Date.now();
+
+    await service.restoreMenu(OWNER, STORE_ID, "menu-public-id");
+
+    const [arg] = prisma.menu.update.mock.calls.at(-1)!;
+    expect(arg.data).toEqual({ deletedAt: null });
+    expect(arg.where).toMatchObject({
+      publicId: "menu-public-id",
+      category: ownedStoreScope,
+    });
+
+    const { gte } = arg.where.deletedAt as { gte: Date };
+    expect(gte.getTime()).toBeGreaterThanOrEqual(
+      before - MENU_RETENTION_MS - 1_000
+    );
+    expect(gte.getTime()).toBeLessThanOrEqual(Date.now() - MENU_RETENTION_MS);
+  });
+
+  it("복구 목록도 보관 기간 내 삭제만, 매장·소유자까지 좁혀 조회한다", async () => {
+    const before = Date.now();
+
+    await service.getRestorableMenus(OWNER, STORE_ID);
+
+    const [arg] = prisma.menu.findMany.mock.calls.at(-1)!;
+    expect(arg!.where).toMatchObject({ category: ownedStoreScope });
+    expect(arg!.orderBy).toEqual({ deletedAt: "desc" });
+
+    const { gte } = arg!.where!.deletedAt as { gte: Date };
+    expect(gte.getTime()).toBeGreaterThanOrEqual(
+      before - MENU_RETENTION_MS - 1_000
+    );
+    expect(gte.getTime()).toBeLessThanOrEqual(Date.now() - MENU_RETENTION_MS);
+  });
+
+  it("대상이 없으면(기간 초과 포함) 404로 안내한다", async () => {
+    prisma.menu.update.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError("not found", {
+        code: "P2025",
+        clientVersion: "6",
+      })
+    );
+
+    await expect(
+      service.restoreMenu(OWNER, STORE_ID, "menu-public-id")
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

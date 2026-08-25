@@ -17,6 +17,7 @@ import { StorageModule } from "src/storage/storage.module";
 import { S3Module } from "src/storage/s3.module";
 import { MenuImageModule } from "src/common/image/menu-image.module";
 import { envSchemas } from "@ssurak/schema";
+import { ScheduleModule } from "@nestjs/schedule";
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { envSchemas } from "@ssurak/schema";
       envFilePath: ["../.env"],
       validate: (config) => envSchemas.parse(config),
     }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     RedisModule,
     S3Module,

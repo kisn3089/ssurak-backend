@@ -20,7 +20,7 @@ export const MENU_VARIANTS = {
 
 export type MenuVariant = keyof typeof MENU_VARIANTS;
 
-export const MENU_VARIANT_NAMES = Object.keys(MENU_VARIANTS) as MenuVariant[];
+export const MENU_VARIANT_NAMES = Object.keys(MENU_VARIANTS);
 
 /**
  * 업로드를 거절할 최소 원본 크기.

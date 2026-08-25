@@ -31,6 +31,12 @@ export interface Menu {
   deletedAt: string | null;
 }
 
+export interface RestorableMenu extends Menu {
+  deletedAt: string;
+  /** 복구 가능 시각. 이 시각 이후에는 메뉴를 복구할 수 없다. */
+  restorableUntil: string;
+}
+
 /**
  * 옵션을 함께 실은 메뉴. 고객 메뉴판 전용이다 —
  * 주문 화면은 한 번의 요청으로 전부 렌더해야 해서 옵션을 나눠 받을 이유가 없다.

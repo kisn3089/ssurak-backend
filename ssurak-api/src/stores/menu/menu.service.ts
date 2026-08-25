@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { createId } from "@paralleldrive/cuid2";
 import { PrismaService } from "src/prisma/prisma.service";
-import { Owner, Prisma, PublicMenu } from "@ssurak/db";
+import { Owner, Prisma, PublicMenu, PublicRestorableMenu } from "@ssurak/db";
 import type { BulkMenuItem } from "@ssurak/schema";
 import {
   BulkCreateMenusPayloadDto,
@@ -29,6 +29,11 @@ import {
   normalizeNameValue,
 } from "src/utils/helper/normalizeName";
 import { MenuDraftStore } from "./menu-draft.store";
+import {
+  MENU_RETENTION_DAYS,
+  MENU_RETENTION_MS,
+  retentionCutoff,
+} from "./menu-retention.const";
 
 const BULK_TX_TIMEOUT_MS = 15_000;
 
@@ -389,6 +394,62 @@ export class MenuService {
       where: this.whereMenuInStore(client, storeId, menuId),
       data: { deletedAt: new Date() },
     });
+  }
+
+  async getRestorableMenus(
+    client: Owner,
+    storeId: string
+  ): Promise<PublicRestorableMenu[]> {
+    const deleted = await this.prismaService.menu.findMany({
+      where: {
+        category: this.whereInStore(client, storeId),
+        deletedAt: { gte: retentionCutoff() },
+      },
+      // 방금 지운 것부터 보여준다 — 실수 직후 되돌리는 게 대부분이다.
+      orderBy: { deletedAt: "desc" },
+      omit: OMIT_MENU_PRIVATE,
+    });
+
+    return deleted.flatMap((menu) =>
+      menu.deletedAt
+        ? [
+            {
+              ...menu,
+              deletedAt: menu.deletedAt,
+              restorableUntil: new Date(
+                menu.deletedAt.getTime() + MENU_RETENTION_MS
+              ),
+            },
+          ]
+        : []
+    );
+  }
+
+  async restoreMenu(
+    client: Owner,
+    storeId: string,
+    menuId: string
+  ): Promise<PublicMenu> {
+    try {
+      return await this.prismaService.menu.update({
+        where: {
+          ...this.whereMenuInStore(client, storeId, menuId),
+          deletedAt: { gte: retentionCutoff() },
+        },
+        data: { deletedAt: null },
+        omit: OMIT_MENU_PRIVATE,
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2025"
+      ) {
+        throw new NotFoundException(
+          `삭제 후 ${MENU_RETENTION_DAYS}일이 지난 메뉴는 복구할 수 없습니다.`
+        );
+      }
+      throw error;
+    }
   }
 
   /** 소프트 삭제된 메뉴는 순서 대상이 아니다 — 목록에도 안 나온다. */

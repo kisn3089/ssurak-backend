@@ -1,12 +1,16 @@
 import { applyDecorators } from "@nestjs/common";
 import { ApiBody, ApiOperation, ApiParam, ApiResponse } from "@nestjs/swagger";
-import { PublicMenuDto } from "src/dto/response/menu.dto";
+import {
+  PublicMenuDto,
+  PublicRestorableMenuDto,
+} from "src/dto/response/menu.dto";
 import {
   CreateMenuPayloadDto,
   ReorderMenusPayloadDto,
   UpdateMenuPayloadDto,
 } from "src/dto/request/menu.dto";
 import { paramsDocs } from "./params.docs";
+import { MENU_RETENTION_DAYS } from "src/stores/menu/menu-retention.const";
 
 const meta = {
   create: {
@@ -32,6 +36,18 @@ const meta = {
   delete: {
     summary: "메뉴 삭제 (소프트 삭제)",
     ok: { status: 204, description: "메뉴 삭제 성공" },
+  },
+  getDeletedList: {
+    summary: `복구 가능한 삭제 메뉴 목록 (최근 ${MENU_RETENTION_DAYS}일)`,
+    ok: { status: 200, description: "삭제 시각 내림차순 메뉴 목록 반환" },
+  },
+  restore: {
+    summary: `메뉴 복구 (삭제 후 ${MENU_RETENTION_DAYS}일 이내)`,
+    ok: { status: 200, description: "복구된 메뉴 반환" },
+    expired: {
+      status: 404,
+      description: `삭제된 메뉴가 없거나, 삭제 후 ${MENU_RETENTION_DAYS}일이 지나 복구할 수 없음`,
+    },
   },
   badRequest: { status: 400, description: "잘못된 요청" },
   unauthorized: { status: 401, description: "인증되지 않은 요청" },
@@ -100,6 +116,24 @@ export const DocsMenuReorder = () =>
     ApiResponse(meta.notFound),
     ApiResponse(meta.unauthorized),
     ApiResponse(meta.orderMismatch)
+  );
+
+export const DocsMenuGetDeletedList = () =>
+  applyDecorators(
+    ApiOperation({ summary: meta.getDeletedList.summary }),
+    ApiParam(paramsDocs.storeId),
+    ApiResponse({ ...meta.getDeletedList.ok, type: [PublicRestorableMenuDto] }),
+    ApiResponse(meta.unauthorized)
+  );
+
+export const DocsMenuRestore = () =>
+  applyDecorators(
+    ApiOperation({ summary: meta.restore.summary }),
+    ApiParam(paramsDocs.storeId),
+    ApiParam(paramsDocs.menuId),
+    ApiResponse({ ...meta.restore.ok, type: PublicMenuDto }),
+    ApiResponse(meta.unauthorized),
+    ApiResponse(meta.restore.expired)
   );
 
 export const DocsMenuDelete = () =>

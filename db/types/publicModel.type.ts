@@ -40,6 +40,10 @@ export type PublicOrderItem<Option extends "Narrow" | "Wide" = "Narrow"> =
     : PublicizeOrderItem;
 
 export type PublicMenu = Omit<Menu, "id">;
+export type PublicRestorableMenu = Omit<PublicMenu, "deletedAt"> & {
+  deletedAt: Date;
+  restorableUntil: Date;
+};
 
 export type PublicMenuOptionChoice = Omit<
   MenuOptionChoice,
