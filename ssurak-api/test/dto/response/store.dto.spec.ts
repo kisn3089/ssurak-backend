@@ -8,10 +8,12 @@ const storeRowFixture = () => ({
   phone: "02-1234-5678",
   address: "서울시 어딘가",
   addressDetail: null,
-  businessHours: "09:00-22:00",
   description: null,
   isOpen: true,
   acceptedMessage: null,
+  timezone: "Asia/Seoul",
+  businessDayCutoff: 300,
+  orderNumberPrefix: "A",
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
   updatedAt: new Date("2026-01-02T00:00:00.000Z"),
 });

@@ -32,10 +32,12 @@ const storeRow: Store = {
   phone: null,
   address: "서울",
   addressDetail: null,
-  businessHours: null,
   description: null,
   isOpen: true,
   acceptedMessage: null,
+  timezone: "Asia/Seoul",
+  businessDayCutoff: 300,
+  orderNumberPrefix: "A",
   createdAt: new Date(),
   updatedAt: new Date(),
 };

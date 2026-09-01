@@ -16,6 +16,7 @@ import { RealtimeModule } from "src/realtime/realtime.module";
 import { StorageModule } from "src/storage/storage.module";
 import { S3Module } from "src/storage/s3.module";
 import { MenuImageModule } from "src/common/image/menu-image.module";
+import { BusinessHoursModule } from "src/common/business-hours/business-hours.module";
 import { envSchemas } from "@ssurak/schema";
 import { ScheduleModule } from "@nestjs/schedule";
 
@@ -31,6 +32,7 @@ import { ScheduleModule } from "@nestjs/schedule";
     RedisModule,
     S3Module,
     MenuImageModule,
+    BusinessHoursModule,
     InternalModule,
     AuthModule,
     IdentityModule,

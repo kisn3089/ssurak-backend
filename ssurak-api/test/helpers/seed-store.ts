@@ -56,6 +56,8 @@ export async function seedStoreDomain(
     },
   });
 
+  // 영업시간 행은 만들지 않는다(= 항상 영업). isOpen도 기본값이 true라
+  // 이 매장은 언제든 주문을 받는다. 거절 경로를 보려면 setBusinessHours를 쓴다.
   const store = await prisma.store.create({
     data: {
       ownerId: owner.id,
@@ -216,6 +218,61 @@ export function selectOption(
   };
 }
 
+/** 주문을 직접 만드는 테스트들이 순번을 겹치지 않게 쓰기 위한 카운터. */
+let testOrderSeq = 0;
+
+/**
+ * 주문 생성에 필요한 영업일·주문번호 필드.
+ * 평소에는 OrdersService가 채우므로, `prisma.order.create`를 직접 부르는
+ * 테스트에서만 쓴다. 순번을 생략하면 호출할 때마다 1씩 올라가
+ * `@@unique([storeId, businessDate, orderSeq])`에 걸리지 않는다.
+ */
+export function orderNumberFields(
+  orderSeq?: number,
+  businessDate = "2026-01-01"
+): { businessDate: string; orderSeq: number; orderNumber: string } {
+  const seq = orderSeq ?? ++testOrderSeq;
+
+  return {
+    businessDate,
+    orderSeq: seq,
+    orderNumber: `A-${String(seq).padStart(4, "0")}`,
+  };
+}
+
+/**
+ * 매장의 요일별 영업시간을 통째로 교체한다.
+ * 행이 하나도 없으면 항상 영업이므로, 거절 경로를 검증할 때만 쓴다.
+ */
+export async function setBusinessHours(
+  prisma: PrismaService,
+  store: Store,
+  days: Array<{
+    dayOfWeek: number;
+    isClosed?: boolean;
+    openMinute?: number;
+    closeMinute?: number;
+    breakStartMinute?: number | null;
+    breakEndMinute?: number | null;
+  }>
+): Promise<void> {
+  await prisma.storeBusinessHour.deleteMany({ where: { storeId: store.id } });
+
+  if (days.length === 0) return;
+
+  await prisma.storeBusinessHour.createMany({
+    data: days.map((day) => ({
+      storeId: store.id,
+      dayOfWeek: day.dayOfWeek,
+      isClosed: day.isClosed ?? false,
+      openMinute: day.openMinute ?? 0,
+      closeMinute: day.closeMinute ?? 1440,
+      breakStartMinute: day.breakStartMinute ?? null,
+      breakEndMinute: day.breakEndMinute ?? null,
+    })),
+  });
+}
+
 /** 서비스 시그니처(SessionWithTable)에 맞는 세션을 생성한다. */
 export async function createSession(
   prisma: PrismaService,
@@ -239,6 +296,8 @@ export async function cleanupStoreDomain(
   domain: SeededStoreDomain
 ): Promise<void> {
   const storeId = domain.store.id;
+  await prisma.storeBusinessHour.deleteMany({ where: { storeId } });
+  await prisma.storeClosure.deleteMany({ where: { storeId } });
   await prisma.orderItem.deleteMany({ where: { order: { storeId } } });
   await prisma.order.deleteMany({ where: { storeId } });
   await prisma.tableSession.deleteMany({ where: { table: { storeId } } });
