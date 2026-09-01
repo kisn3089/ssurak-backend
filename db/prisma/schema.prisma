@@ -92,10 +92,24 @@ model Store {
   phone           String?
   address         String
   addressDetail   String?  @map("address_detail")
-  businessHours   String?  @map("business_hours")
   description     String?  @db.Text
-  isOpen          Boolean  @default(false) @map("is_open")
+  /**
+   * 영업시간과 무관하게 점주가 주문을 즉시 막는 "일시 중지" 스위치.
+   * 영업 여부 판정에서 가장 먼저 평가된다 — false면 영업시간 안이어도 주문을 받지 않는다.
+   */
+  isOpen          Boolean  @default(true) @map("is_open")
   acceptedMessage String?  @map("accepted_message") @db.VarChar(500)
+  /** 영업시간 판정 기준 타임존. DateTime은 UTC로 저장되므로 판정에는 이 값이 필수다. */
+  timezone        String   @default("Asia/Seoul") @db.VarChar(40)
+  /**
+   * 영업일 경계(자정 기준 분). 기본 300 = 새벽 5시.
+   * 이 시각 이전의 주문은 "전날 영업일"로 묶인다 — 주문번호 리셋 기준점이다.
+   * 제약: 모든 openMinute >= cutoff, 모든 closeMinute <= 1440 + cutoff.
+   * (어제 마감과 오늘 오픈 사이의 빈 구간에 있어야 한다)
+   */
+  businessDayCutoff Int    @default(300) @map("business_day_cutoff")
+  /** 주문번호 접두사. "A-0001"의 "A". */
+  orderNumberPrefix String @default("A") @map("order_number_prefix") @db.VarChar(4)
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
@@ -103,8 +117,63 @@ model Store {
   tables     Table[]
   orders     Order[]
   categories Category[]
+  /// 관계 필드명을 `businessHours`로 두어 조회 결과 모양이 곧 API 응답 모양이 되게 한다.
+  businessHours StoreBusinessHour[]
+  closures      StoreClosure[]
 
   @@map("store")
+}
+
+/**
+ * 요일별 정기 영업시간. 요일당 정확히 1행.
+ * 시각을 "HH:mm"이 아니라 자정 기준 분(Int)으로 저장한다 — 파싱 없이 대소 비교만으로
+ * 판정되고, 자정을 넘기는 영업(18:00~02:00 → 1080~1560)을 closeMinute > 1440으로
+ * 표현할 수 있다.
+ */
+model StoreBusinessHour {
+  id        BigInt @id @default(autoincrement())
+  storeId   BigInt @map("store_id")
+  /** 0=일 ~ 6=토. JS Date#getDay()와 같은 값이라 변환 코드가 필요 없다. */
+  dayOfWeek Int    @map("day_of_week") @db.TinyInt
+  /**
+   * 정기 휴무 요일. true면 open/close는 무시된다 —
+   * 행을 지우지 않고 플래그만 토글해야 휴무를 해제했을 때 이전 시간이 살아난다.
+   */
+  isClosed         Boolean  @default(false) @map("is_closed")
+  openMinute       Int      @map("open_minute")
+  closeMinute      Int      @map("close_minute")
+  /** 브레이크타임. 둘 다 null이면 없음. */
+  breakStartMinute Int?     @map("break_start_minute")
+  breakEndMinute   Int?     @map("break_end_minute")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, dayOfWeek])
+  @@map("store_business_hour")
+}
+
+/** 특정 날짜의 임시 휴무 또는 특별 영업시간. 정기 영업시간보다 우선한다. */
+model StoreClosure {
+  id       BigInt  @id @default(autoincrement())
+  publicId String  @unique @default(cuid(2)) @map("public_id")
+  storeId  BigInt  @map("store_id")
+  date     String  @db.Char(10)
+  reason   String? @db.VarChar(100)
+  /**
+   * 둘 다 null이면 종일 휴무.
+   * 값이 있으면 그날만 이 시간으로 영업한다(단축 영업·명절 특별 영업).
+   */
+  openMinute  Int?     @map("open_minute")
+  closeMinute Int?     @map("close_minute")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, date])
+  @@map("store_closure")
 }
 
 /**
@@ -332,6 +401,18 @@ model Order {
   tableSessionId  BigInt      @map("table_session_id")
   status          OrderStatus @default(PENDING)
   /**
+   * 영업일 키 "YYYY-MM-DD". createdAt의 날짜가 아니라 Store.businessDayCutoff로 계산한 값이다.
+   * 새벽 2시 주문이 전날 장사에 묶이도록 하는 것이 이 컬럼의 존재 이유다.
+   */
+  businessDate    String      @map("business_date") @db.Char(10)
+  /** 영업일 안에서의 순번. 채번·정렬은 이 값으로 한다. */
+  orderSeq        Int         @map("order_seq")
+  /**
+   * 발행 시점의 표시용 번호("A-0001"). orderSeq에서 파생되지만 저장한다 —
+   * Store.orderNumberPrefix가 바뀌어도 과거 주문의 번호는 발행 당시 값으로 남아야 한다.
+   */
+  orderNumber     String      @map("order_number") @db.VarChar(12)
+  /**
    * 메뉴마다의 요청사항과 별개로 고객이 남기는 요청사항
    * 예) 해장국 덜 맵게 해주세요.
    */
@@ -350,6 +431,7 @@ model Order {
   tableSession TableSession @relation(fields: [tableSessionId], references: [id], onDelete: Restrict)
   orderItems   OrderItem[]
 
+  @@unique([storeId, businessDate, orderSeq])
   @@index([tableSessionId])
   @@index([storeId, status, completedAt])
   @@map("order")

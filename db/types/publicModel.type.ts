@@ -7,6 +7,8 @@ import type {
   OrderItem,
   Owner,
   Store,
+  StoreBusinessHour,
+  StoreClosure,
   Table,
   TableSession,
 } from "@prisma/client";
@@ -59,6 +61,16 @@ export type PublicMenuWithOptions = PublicMenu & {
 };
 
 export type PublicStore = Omit<Store, "id" | "ownerId">;
+
+export type PublicStoreBusinessHour = Omit<
+  StoreBusinessHour,
+  "id" | "storeId" | "createdAt" | "updatedAt"
+>;
+
+export type PublicStoreClosure = Omit<
+  StoreClosure,
+  "id" | "storeId" | "createdAt" | "updatedAt"
+>;
 
 export type PublicOrderWithItem<
   Option extends "Narrow" | "Wide" = "Narrow",
