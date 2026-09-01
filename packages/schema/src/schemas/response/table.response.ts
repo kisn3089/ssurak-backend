@@ -3,6 +3,7 @@ import type { Table } from "../../types/table/table.interface";
 import type { BoardTableWithSessionResponse } from "../../types/board/board.interface";
 import type { CategoryWithMenusResponse } from "../../types/category/category.interface";
 import type { StoreContextResponse } from "../../types/store/store.interface";
+import { storeOpenStateSchema } from "./businessHour.response";
 import { isoDateTime } from "./common.response";
 import { publicStoreSchema } from "./store.response";
 import { publicMenuWithOptionsSchema } from "./menu.response";
@@ -73,6 +74,9 @@ export const tableWithStoreContextSchema = z.object({
           categories: z
             .array(categoryWithMenusSchema)
             .describe("카테고리 목록"),
+          openState: storeOpenStateSchema.describe(
+            "지금 주문을 받을 수 있는지에 대한 판정 결과"
+          ),
         })
         .describe("매장 정보"),
     })

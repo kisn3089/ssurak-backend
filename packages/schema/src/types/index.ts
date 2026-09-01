@@ -1,6 +1,7 @@
 export * from "./admin/admin.interface";
 export * from "./auth/auth.type";
 export * from "./board/board.interface";
+export * from "./businessHour/businessHour.interface";
 export * from "./cart/cart.interface";
 export * from "./category/category.interface";
 export * from "./exception.interface";

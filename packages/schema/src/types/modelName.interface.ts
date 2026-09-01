@@ -6,6 +6,8 @@ export type ModelName =
   | "Admin"
   | "Owner"
   | "Store"
+  | "StoreBusinessHour"
+  | "StoreClosure"
   | "Category"
   | "Table"
   | "Menu"
