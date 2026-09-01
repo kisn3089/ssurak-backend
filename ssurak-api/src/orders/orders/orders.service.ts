@@ -43,11 +43,24 @@ import { TABLE_OMIT } from "src/common/query/table-query.const";
 import {
   CancelParams,
   CreatedOrder,
+  CreateOrderOptions,
   CreateOrderParams,
   CreateOrderPayload,
   ReturnOrder,
   UpdatedOrder,
 } from "./orders.service.type";
+import { Tx } from "src/utils/helper/transactionPipe";
+import {
+  formatOrderNumber,
+  isIdempotencyKeyConflict,
+  isOrderSeqConflict,
+  nextOrderSeq,
+  ORDER_SEQ_MAX_RETRY,
+} from "./order-number";
+import {
+  getBusinessDate,
+  StoreOpenStateService,
+} from "src/common/business-hours";
 
 @Injectable()
 export class OrdersService {
@@ -56,6 +69,7 @@ export class OrdersService {
     private readonly sessionClient: SessionClient,
     private readonly cartService: CartService,
     private readonly menuImageService: MenuImageService,
+    private readonly storeOpenState: StoreOpenStateService,
     @Inject(REDLOCK_CLIENT) private readonly redlock: Redlock
   ) {}
 
@@ -63,10 +77,15 @@ export class OrdersService {
     params: CreateOrderParams,
     createOrderPayload: CreateOrderPayloadDto
   ): Promise<ReturnOrder<CreatedOrder, "tableNumber">> {
-    return await this.createOrderCore(params, {
-      orderItems: createOrderPayload.orderItems,
-      memo: createOrderPayload.memo,
-    });
+    // 점주 대리 주문은 영업시간을 강제하지 않는다 — 마감 후 정리 주문을 막으면 안 된다.
+    return await this.createOrderCore(
+      params,
+      {
+        orderItems: createOrderPayload.orderItems,
+        memo: createOrderPayload.memo,
+      },
+      { enforceBusinessHours: false }
+    );
   }
 
   async createOrderByCustomer(
@@ -109,7 +128,8 @@ export class OrdersService {
             memo: createOrderPayload.memo,
             idempotencyKey,
             tableSessionId: session.id,
-          }
+          },
+          { enforceBusinessHours: true }
         );
       }
     );
@@ -126,88 +146,166 @@ export class OrdersService {
     return createdOrder;
   }
 
-  /** 메뉴 검증 → 세션 활성화 → 주문 생성을 한 트랜잭션으로 처리한다. */
   private async createOrderCore(
     params: CreateOrderParams,
-    payload: CreateOrderPayload
+    payload: CreateOrderPayload,
+    options: CreateOrderOptions
   ): Promise<ReturnOrder<CreatedOrder, "tableNumber" | "deduplicated">> {
-    try {
-      const { order, session } = await this.prismaService.$transaction(
-        async (tx) => {
-          const session: SessionWithTable =
-            await this.sessionClient.txGetOrCreateSession(tx, params);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.createOrderTransaction(params, payload, options);
+      } catch (error) {
+        if (!this.isUniqueViolation(error)) throw error;
 
-          const menuPublicIds = payload.orderItems.map(
-            (item) => item.menuPublicId
+        if (isOrderSeqConflict(error) && attempt < ORDER_SEQ_MAX_RETRY)
+          continue;
+
+        if (payload.idempotencyKey && isIdempotencyKeyConflict(error)) {
+          const existing = await this.findOrderByIdempotencyKey(
+            payload.idempotencyKey,
+            payload.tableSessionId
           );
-
-          const menus = await tx.menu.findMany({
-            where: {
-              publicId: { in: menuPublicIds },
-              deletedAt: null,
-              category: { storeId: session.table.storeId },
-            },
-            select: MENU_VALIDATION_FIELDS_SELECT,
-          });
-
-          const orderItemsData = createOrderItemsWithValidMenu(
-            payload.orderItems,
-            menus,
-            menuPublicIds,
-            this.menuImageService.baseUrl
-          );
-
-          if (session.status !== TableSessionStatus.ACTIVE) {
-            await this.sessionClient.updateSessionStatus(
-              tx,
-              session,
-              TableSessionStatus.ACTIVE
-            );
-          }
-
-          const order = await tx.order.create({
-            data: {
-              storeId: session.table.storeId,
-              tableId: session.table.id,
-              tableSessionId: session.id,
-              orderItems: { create: orderItemsData },
-              memo: payload.memo,
-              idempotencyKey: payload.idempotencyKey,
-            },
-            include: {
-              ...ORDER_ITEMS_WITH_OMIT_PRIVATE.include,
-              tableSession: { select: { sessionToken: true, expiresAt: true } },
-            },
-            omit: ORDER_ITEMS_WITH_OMIT_PRIVATE.omit,
-          });
-
-          return { order, session };
+          if (existing) return existing;
         }
-      );
 
-      return {
-        order,
-        subscriber: {
-          storePublicId: session.table.store.publicId,
-          tablePublicId: session.table.publicId,
-        },
-        meta: { tableNumber: session.table.tableNumber, deduplicated: false },
-      };
-    } catch (error) {
-      if (
-        payload.idempotencyKey &&
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2002" &&
-        this.isIdempotencyKeyConflict(error)
-      ) {
-        const existing = await this.findOrderByIdempotencyKey(
-          payload.idempotencyKey,
-          payload.tableSessionId
-        );
-        if (existing) return existing;
+        throw error;
       }
-      throw error;
     }
+  }
+
+  private async createOrderTransaction(
+    params: CreateOrderParams,
+    payload: CreateOrderPayload,
+    options: CreateOrderOptions
+  ): Promise<ReturnOrder<CreatedOrder, "tableNumber" | "deduplicated">> {
+    const now = new Date();
+
+    const { order, session } = await this.prismaService.$transaction(
+      async (tx) => {
+        const session: SessionWithTable =
+          await this.sessionClient.txGetOrCreateSession(tx, params);
+
+        const businessDate = await this.assertOpenAndResolveBusinessDate(
+          tx,
+          session.table.storeId,
+          now,
+          options
+        );
+
+        const menuPublicIds = payload.orderItems.map(
+          (item) => item.menuPublicId
+        );
+
+        const menus = await tx.menu.findMany({
+          where: {
+            publicId: { in: menuPublicIds },
+            deletedAt: null,
+            category: { storeId: session.table.storeId },
+          },
+          select: MENU_VALIDATION_FIELDS_SELECT,
+        });
+
+        const orderItemsData = createOrderItemsWithValidMenu(
+          payload.orderItems,
+          menus,
+          menuPublicIds,
+          this.menuImageService.baseUrl
+        );
+
+        if (session.status !== TableSessionStatus.ACTIVE) {
+          await this.sessionClient.updateSessionStatus(
+            tx,
+            session,
+            TableSessionStatus.ACTIVE
+          );
+        }
+
+        const orderSeq = await nextOrderSeq(
+          tx,
+          session.table.storeId,
+          businessDate.businessDate
+        );
+
+        const order = await tx.order.create({
+          data: {
+            storeId: session.table.storeId,
+            tableId: session.table.id,
+            tableSessionId: session.id,
+            businessDate: businessDate.businessDate,
+            orderSeq,
+            orderNumber: formatOrderNumber(businessDate.prefix, orderSeq),
+            orderItems: { create: orderItemsData },
+            memo: payload.memo,
+            idempotencyKey: payload.idempotencyKey,
+          },
+          include: {
+            ...ORDER_ITEMS_WITH_OMIT_PRIVATE.include,
+            tableSession: { select: { sessionToken: true, expiresAt: true } },
+          },
+          omit: ORDER_ITEMS_WITH_OMIT_PRIVATE.omit,
+        });
+
+        return { order, session };
+      }
+    );
+
+    return {
+      order,
+      subscriber: {
+        storePublicId: session.table.store.publicId,
+        tablePublicId: session.table.publicId,
+      },
+      meta: { tableNumber: session.table.tableNumber, deduplicated: false },
+    };
+  }
+
+  private async assertOpenAndResolveBusinessDate(
+    tx: Tx,
+    storeId: bigint,
+    now: Date,
+    options: CreateOrderOptions
+  ): Promise<{ businessDate: string; prefix: string }> {
+    const storeSchedule = await this.storeOpenState.loadSchedule(storeId, tx);
+
+    if (!options.enforceBusinessHours) {
+      return {
+        businessDate: getBusinessDate(now, storeSchedule),
+        prefix: storeSchedule.orderNumberPrefix,
+      };
+    }
+
+    const { state } = await this.storeOpenState.storeOpenState(
+      storeSchedule,
+      now,
+      tx
+    );
+
+    if (!state.isOpen) {
+      throw new HttpException(
+        {
+          ...exceptionContentsIs("STORE_CLOSED"),
+          details: {
+            reason: state.reason,
+            nextOpenAt: state.nextOpenAt?.toISOString() ?? null,
+          },
+        },
+        HttpStatus.CONFLICT
+      );
+    }
+
+    return {
+      businessDate: state.businessDate,
+      prefix: storeSchedule.orderNumberPrefix,
+    };
+  }
+
+  private isUniqueViolation(
+    error: unknown
+  ): error is Prisma.PrismaClientKnownRequestError {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    );
   }
 
   private async findOrderByIdempotencyKey(
@@ -240,18 +338,6 @@ export class OrdersService {
       },
       meta: { tableNumber: order.table.tableNumber, deduplicated: true },
     };
-  }
-
-  private isIdempotencyKeyConflict(
-    error: Prisma.PrismaClientKnownRequestError
-  ): boolean {
-    const target = error.meta?.target;
-    const targetText = Array.isArray(target)
-      ? target.join(",")
-      : typeof target === "string"
-        ? target
-        : "";
-    return targetText.includes("idempotency");
   }
 
   private async withIdempotencyLock<T>(

@@ -8,6 +8,7 @@ import { expectHttpExceptionAsync } from "test/helpers/expect-http-exception";
 import {
   cleanupStoreDomain,
   createSession,
+  orderNumberFields,
   seedStoreDomain,
   SeededStoreDomain,
   selectOption,
@@ -41,6 +42,7 @@ describe("OrderItemService (통합)", () => {
         storeId: domain.store.id,
         tableId: domain.table.id,
         tableSessionId: session.id,
+        ...orderNumberFields(),
         orderItems: {
           create: [
             {
