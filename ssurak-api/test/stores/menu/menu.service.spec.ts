@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { mockDeep } from "vitest-mock-extended";
-import { HttpException, NotFoundException } from "@nestjs/common";
+import { HttpStatus, NotFoundException } from "@nestjs/common";
 import { Category, Menu, Owner, Prisma } from "@ssurak/db";
 import { MenuService } from "src/stores/menu/menu.service";
 import { PrismaService } from "src/prisma/prisma.service";
+import { expectHttpExceptionAsync } from "test/helpers/expect-http-exception";
 import { StorageService } from "src/storage/storage.service";
 import { MenuDraftStore } from "src/stores/menu/menu-draft.store";
 import type { CreateMenuPayloadDto } from "src/dto/request/menu.dto";
@@ -268,9 +269,11 @@ describe("MenuService.reorderMenus", () => {
     // GET_LOCK 타임아웃 = 다른 재정렬이 처리 중.
     prisma.$queryRaw.mockResolvedValue([{ acquired: 0 }]);
 
-    await expect(
-      service.reorderMenus(OWNER, STORE_ID, payload)
-    ).rejects.toThrowError(HttpException);
+    // 재시도하면 풀리는 경합이라 집합 불일치와 코드가 갈려야 한다.
+    await expectHttpExceptionAsync(
+      () => service.reorderMenus(OWNER, STORE_ID, payload),
+      { code: "REORDER_IN_PROGRESS", status: HttpStatus.CONFLICT }
+    );
 
     expect(prisma.$executeRaw).not.toHaveBeenCalled();
   });
@@ -333,9 +336,11 @@ describe("MenuService.reorderMenus", () => {
       { ...menuRow, publicId: "m3" },
     ]);
 
-    await expect(
-      service.reorderMenus(OWNER, STORE_ID, payload)
-    ).rejects.toThrowError(HttpException);
+    // 새로고침 전에는 재시도해도 계속 실패한다 — REORDER_IN_PROGRESS와 다른 코드다.
+    await expectHttpExceptionAsync(
+      () => service.reorderMenus(OWNER, STORE_ID, payload),
+      { code: "MENU_ORDER_MISMATCH", status: HttpStatus.CONFLICT }
+    );
 
     expect(prisma.$executeRaw).not.toHaveBeenCalled();
   });
@@ -346,9 +351,10 @@ describe("MenuService.reorderMenus", () => {
       { ...menuRow, publicId: "zzz" },
     ]);
 
-    await expect(
-      service.reorderMenus(OWNER, STORE_ID, payload)
-    ).rejects.toThrowError(HttpException);
+    await expectHttpExceptionAsync(
+      () => service.reorderMenus(OWNER, STORE_ID, payload),
+      { code: "MENU_ORDER_MISMATCH", status: HttpStatus.CONFLICT }
+    );
 
     expect(prisma.$executeRaw).not.toHaveBeenCalled();
   });

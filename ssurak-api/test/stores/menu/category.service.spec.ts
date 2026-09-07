@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { mockDeep } from "vitest-mock-extended";
-import { HttpException } from "@nestjs/common";
+import { HttpException, HttpStatus } from "@nestjs/common";
 import { Category, Owner, Store } from "@ssurak/db";
 import { CategoryService } from "src/stores/menu/category.service";
 import { PrismaService } from "src/prisma/prisma.service";
+import { expectHttpExceptionAsync } from "test/helpers/expect-http-exception";
 
 const STORE_ID = "store-public-id";
 const CATEGORY_ID = "category-public-id";
@@ -199,9 +200,11 @@ describe("CategoryService.reorderCategories", () => {
     mockCurrent("c1", "c2", "c3");
     prisma.$queryRaw.mockResolvedValue([{ acquired: 0 }]);
 
-    await expect(
-      service.reorderCategories(owner, STORE_ID, payload)
-    ).rejects.toThrowError(HttpException);
+    // 재시도하면 풀리는 경합이라 집합 불일치와 코드가 갈려야 한다.
+    await expectHttpExceptionAsync(
+      () => service.reorderCategories(owner, STORE_ID, payload),
+      { code: "REORDER_IN_PROGRESS", status: HttpStatus.CONFLICT }
+    );
 
     expect(prisma.$executeRaw).not.toHaveBeenCalled();
   });
@@ -244,9 +247,11 @@ describe("CategoryService.reorderCategories", () => {
     // 다른 탭에서 카테고리를 추가했다 = 클라이언트 목록이 stale하다.
     mockCurrent("c1", "c2", "c3", "c4");
 
-    await expect(
-      service.reorderCategories(owner, STORE_ID, payload)
-    ).rejects.toThrowError(HttpException);
+    // 새로고침 전에는 재시도해도 계속 실패한다 — REORDER_IN_PROGRESS와 다른 코드다.
+    await expectHttpExceptionAsync(
+      () => service.reorderCategories(owner, STORE_ID, payload),
+      { code: "CATEGORY_ORDER_MISMATCH", status: HttpStatus.CONFLICT }
+    );
 
     expect(prisma.$executeRaw).not.toHaveBeenCalled();
   });
@@ -254,9 +259,10 @@ describe("CategoryService.reorderCategories", () => {
   it("남의 매장 카테고리를 섞어 보내도 집합 검사에서 걸린다", async () => {
     mockCurrent("c1", "c2", "other-store-category");
 
-    await expect(
-      service.reorderCategories(owner, STORE_ID, payload)
-    ).rejects.toThrowError(HttpException);
+    await expectHttpExceptionAsync(
+      () => service.reorderCategories(owner, STORE_ID, payload),
+      { code: "CATEGORY_ORDER_MISMATCH", status: HttpStatus.CONFLICT }
+    );
 
     expect(prisma.$executeRaw).not.toHaveBeenCalled();
   });
