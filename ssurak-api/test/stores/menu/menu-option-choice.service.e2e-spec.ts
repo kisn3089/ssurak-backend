@@ -1,8 +1,17 @@
 import { HttpStatus, INestApplication } from "@nestjs/common";
 import { OptionChoiceState, OptionSelectionType } from "@ssurak/db";
 import type { CreateMenuOptionPayload } from "@ssurak/schema";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { PrismaService } from "src/prisma/prisma.service";
+import { REORDER_TX_TIMEOUT_MS } from "src/utils/helper/withReorderLock";
 import { MenuOptionChoiceService } from "src/stores/menu/menu-option-choice.service";
 import { MenuOptionService } from "src/stores/menu/menu-option.service";
 import { createTestApp } from "test/helpers/create-test-app";
@@ -478,6 +487,21 @@ describe("MenuOptionChoiceService (통합)", () => {
           status: HttpStatus.CONFLICT,
         }
       );
+    });
+
+    it("락 대기분을 더한 트랜잭션 timeout으로 실행한다", async () => {
+      const option = await createOption("온도", ["HOT", "ICE"]);
+      const txSpy = vi.spyOn(prisma, "$transaction");
+
+      await service.reorderChoices(domain.owner, storeId(), option.publicId, {
+        choiceIds: option.choices.map((choice) => choice.publicId),
+      });
+
+      // 기본 5초를 그대로 쓰면 GET_LOCK을 3초 기다린 요청에 2초만 남아 P2028이 나고,
+      // ORM 레벨 오류가 집합 검증을 선점해 409 대신 400(PRISMA_ERROR)이 나간다.
+      const calls = txSpy.mock.calls as unknown as unknown[][];
+      expect(calls.at(-1)?.[1]).toEqual({ timeout: REORDER_TX_TIMEOUT_MS });
+      txSpy.mockRestore();
     });
   });
 });
