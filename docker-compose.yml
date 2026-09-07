@@ -48,6 +48,7 @@ services:
       - --innodb_flush_log_at_trx_commit=1
       - --sync_binlog=1
       - --binlog_expire_logs_seconds=604800 # 7 days
+      # - --innodb_lock_wait_timeout=4   # 어드바이저리 락 대기 시간
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
       MYSQL_DATABASE: ${DB_NAME}

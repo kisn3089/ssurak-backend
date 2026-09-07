@@ -22,6 +22,7 @@ services:
       - --sync_binlog=0
       - --innodb_flush_log_at_trx_commit=2
       - --innodb_temp_data_file_path=ibtmp1:64M:autoextend:max:512M
+      # - --innodb_lock_wait_timeout=4   # 어드바이저리 락 대기 시간
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
       MYSQL_DATABASE: ${DB_NAME}
