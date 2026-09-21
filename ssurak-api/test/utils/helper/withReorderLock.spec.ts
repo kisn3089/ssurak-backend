@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockDeep } from "vitest-mock-extended";
 import { HttpStatus } from "@nestjs/common";
+import { Prisma } from "@ssurak/db";
 import { PrismaService } from "src/prisma/prisma.service";
 import { expectHttpExceptionAsync } from "test/helpers/expect-http-exception";
 import {
@@ -19,6 +20,21 @@ const sqlOf = (call: unknown[]) => {
   const [sql] = call as [{ strings?: string[]; values?: unknown[] }];
   return { text: sql.strings?.join("") ?? "", values: sql.values ?? [] };
 };
+
+/**
+ * tx로 나간 쿼리를 실행 순서대로 이름만 남긴다. 락은 "해제가 언제 나갔는가"가
+ * 곧 계약이라, 마지막 호출만 보면 작업 전에 풀어버린 구현도 통과해버린다.
+ */
+const trace = () =>
+  tx.$queryRaw.mock.calls.map((call) => {
+    const { text } = sqlOf(call);
+    if (text.includes("GET_LOCK")) return "GET_LOCK";
+    if (text.includes("RELEASE_LOCK")) return "RELEASE_LOCK";
+    return "WORK";
+  });
+
+/** 락 안에서 실제로 쿼리를 날려야 해제 시점이 trace에 드러난다. */
+const workQuery = () => tx.$queryRaw(Prisma.sql`SELECT 1 AS work`);
 
 beforeEach(() => {
   tx.$queryRaw.mockReset();
@@ -59,44 +75,54 @@ describe("withReorderLock 락 실패", () => {
 
     expect(work).not.toHaveBeenCalled();
     // 잡지도 않은 락을 푸는 쿼리가 나가면 안 된다.
-    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(trace()).toEqual(["GET_LOCK"]);
   });
 
   it("NULL(GET_LOCK 에러)도 409로 묶는다", async () => {
     // Number(null)은 0이라 획득 실패와 같은 분기를 탄다.
     tx.$queryRaw.mockResolvedValue([{ acquired: null }]);
 
-    await expectInProgress(() => withReorderLock(tx, STORE_ID, async () => "ok"));
+    await expectInProgress(() =>
+      withReorderLock(tx, STORE_ID, async () => "ok")
+    );
   });
 
   it("빈 결과가 와도 획득으로 오인하지 않는다", async () => {
     tx.$queryRaw.mockResolvedValue([]);
 
-    await expectInProgress(() => withReorderLock(tx, STORE_ID, async () => "ok"));
+    await expectInProgress(() =>
+      withReorderLock(tx, STORE_ID, async () => "ok")
+    );
   });
 });
 
 describe("withReorderLock 락 해제", () => {
-  it("작업 결과를 그대로 돌려주고 COMMIT 전에 해제한다", async () => {
-    const result = await withReorderLock(tx, STORE_ID, async () => ["a", "b"]);
+  it("작업 결과를 그대로 돌려주고 작업이 끝난 뒤에 해제한다", async () => {
+    const result = await withReorderLock(tx, STORE_ID, async () => {
+      await workQuery();
+      return ["a", "b"];
+    });
 
     expect(result).toEqual(["a", "b"]);
+    // 순서가 곧 상호배제다. 해제가 작업보다 먼저 나가면 락이 아무것도 지키지 않는다.
+    expect(trace()).toEqual(["GET_LOCK", "WORK", "RELEASE_LOCK"]);
 
     const release = sqlOf(tx.$queryRaw.mock.calls.at(-1)!);
-    expect(release.text).toContain("RELEASE_LOCK");
     expect(release.values).toEqual([LOCK_NAME]);
   });
 
-  it("작업이 실패해도 해제한다", async () => {
-    // GET_LOCK은 세션 락이라 ROLLBACK으로 풀리지 않는다. finally를 빠뜨리면
+  it("작업이 실패해도 작업 뒤에 해제한다", async () => {
+    // GET_LOCK은 세션 락이라 ROLLBACK으로 풀리지 않는다. 해제를 빠뜨리면
     // 커넥션이 풀로 반납된 뒤에도 락이 남아 이후 재정렬이 전부 409가 된다.
     const failure = new Error("집합 불일치");
 
     await expect(
-      withReorderLock(tx, STORE_ID, () => Promise.reject(failure))
+      withReorderLock(tx, STORE_ID, async () => {
+        await workQuery();
+        throw failure;
+      })
     ).rejects.toThrowError(failure);
 
-    const release = sqlOf(tx.$queryRaw.mock.calls.at(-1)!);
-    expect(release.text).toContain("RELEASE_LOCK");
+    expect(trace()).toEqual(["GET_LOCK", "WORK", "RELEASE_LOCK"]);
   });
 });
