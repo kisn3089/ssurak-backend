@@ -168,6 +168,13 @@ export class OrdersService {
           if (existing) return existing;
         }
 
+        if (isOrderSeqConflict(error)) {
+          throw new HttpException(
+            exceptionContentsIs("ORDER_NUMBER_CONFLICT"),
+            HttpStatus.CONFLICT
+          );
+        }
+
         throw error;
       }
     }

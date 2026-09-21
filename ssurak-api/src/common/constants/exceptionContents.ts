@@ -122,6 +122,11 @@ const EXCEPTION_CONTENTS = {
     code: "ORDER_ALREADY_CANCELLED",
     message: "취소된 주문은 변경할 수 없습니다.",
   },
+  ORDER_NUMBER_CONFLICT: {
+    code: "ORDER_NUMBER_CONFLICT",
+    message:
+      "주문이 몰려 주문번호를 발급하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+  },
   ORDER_STATUS_INVALID_TRANSITION: {
     code: "ORDER_STATUS_INVALID_TRANSITION",
     message:
