@@ -134,6 +134,23 @@ describe("businessDateMinuteToDate", () => {
   });
 });
 
+describe("타임존 이름 변형", () => {
+  // 포매터 캐시는 Intl 정규화 이름을 키로 쓴다. 변형 이름이 다른 존의
+  // 포매터를 집어오면 영업일 판정이 통째로 어긋난다.
+  it("대소문자가 달라도 같은 존으로 해석한다", () => {
+    const at = kst("2026-08-27T01:00");
+
+    for (const timezone of ["asia/seoul", "ASIA/SEOUL"]) {
+      expect(getBusinessDate(at, { ...SEOUL, timezone })).toBe(
+        getBusinessDate(at, SEOUL)
+      );
+      expect(minutesFromBusinessDayStart(at, { ...SEOUL, timezone })).toBe(
+        minutesFromBusinessDayStart(at, SEOUL)
+      );
+    }
+  });
+});
+
 describe("isSupportedTimezone", () => {
   it("IANA 타임존만 통과시킨다", () => {
     expect(isSupportedTimezone("Asia/Seoul")).toBe(true);

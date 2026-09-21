@@ -203,6 +203,24 @@ describe("resolveStoreOpenState", () => {
     });
 
     expect(state.reason).toBe(StoreOpenReason.HOLIDAY);
+    // 수동 중지가 아니므로 재개 시각이 있어야 한다 — 다음 영업일 시작(cutoff 05:00).
+    expect(state.nextOpenAt?.toISOString()).toBe(
+      kst("2026-08-27T05:00").toISOString()
+    );
+  });
+
+  it("영업시간 미설정 매장의 연속 휴무는 마지막 휴무 다음 영업일에 열린다", () => {
+    const state = resolve({
+      now: kst("2026-08-26T12:00"),
+      closures: [
+        { date: "2026-08-26", openMinute: null, closeMinute: null },
+        { date: "2026-08-27", openMinute: null, closeMinute: null },
+      ],
+    });
+
+    expect(state.nextOpenAt?.toISOString()).toBe(
+      kst("2026-08-28T05:00").toISOString()
+    );
   });
 
   describe("자정을 넘기는 심야 영업 (18:00~26:00)", () => {
