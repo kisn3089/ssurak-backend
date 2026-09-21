@@ -2,7 +2,10 @@ import { HttpException, HttpStatus, Injectable } from "@nestjs/common";
 import { PrismaService } from "src/prisma/prisma.service";
 import { Owner, PublicStore, User } from "@ssurak/db";
 import { MINUTES_PER_DAY } from "@ssurak/schema";
-import { isSupportedTimezone } from "src/common/business-hours";
+import {
+  getBusinessDate,
+  isSupportedTimezone,
+} from "src/common/business-hours";
 import { exceptionContentsIs } from "src/common/constants/exceptionContents";
 import {
   CreateStorePayloadDto,
@@ -58,7 +61,8 @@ export class StoresService {
       await this.assertCutoffFitsBusinessHours(
         user,
         storeId,
-        updatePayload.businessDayCutoff
+        updatePayload.businessDayCutoff,
+        updatePayload.timezone
       );
     }
 
@@ -88,26 +92,54 @@ export class StoresService {
   /**
    * 영업일 경계를 옮기면 이미 저장된 영업시간이 경계 밖으로 새어 나갈 수 있다.
    * (예: 09:00 오픈인데 cutoff를 600(10:00)으로 올리면 그 요일은 영원히 닫힌다)
+   *
+   * 휴무일의 특별 영업시간도 같은 경계를 쓰고, 판정에서는 정기 영업시간보다
+   * 우선하므로 함께 본다. 지난 날짜는 판정에 쓰이지 않아 오늘 영업일부터만 센다.
    */
   private async assertCutoffFitsBusinessHours(
     user: User,
     storeId: string,
-    cutoff: number
+    cutoff: number,
+    timezone?: string
   ): Promise<void> {
+    const store = await this.prismaService.store.findFirstOrThrow({
+      where: { publicId: storeId, ownerId: user.id },
+      select: { id: true, timezone: true },
+    });
+
+    const outOfRange = [
+      { openMinute: { lt: cutoff } },
+      { closeMinute: { gt: cutoff + MINUTES_PER_DAY } },
+    ];
+
     const conflicting = await this.prismaService.storeBusinessHour.findFirst({
-      where: {
-        store: { publicId: storeId, ownerId: user.id },
-        isClosed: false,
-        OR: [
-          { openMinute: { lt: cutoff } },
-          { closeMinute: { gt: cutoff + MINUTES_PER_DAY } },
-        ],
-      },
+      where: { storeId: store.id, isClosed: false, OR: outOfRange },
       select: { dayOfWeek: true, openMinute: true, closeMinute: true },
     });
 
-    if (!conflicting) return;
+    if (conflicting) this.throwCutoffConflict(cutoff, conflicting);
 
+    const businessDate = getBusinessDate(new Date(), {
+      timezone: timezone ?? store.timezone,
+      businessDayCutoff: cutoff,
+    });
+
+    const conflictingClosure = await this.prismaService.storeClosure.findFirst({
+      where: {
+        storeId: store.id,
+        date: { gte: businessDate },
+        openMinute: { not: null },
+        closeMinute: { not: null },
+        OR: outOfRange,
+      },
+      select: { date: true, openMinute: true, closeMinute: true },
+    });
+
+    if (conflictingClosure)
+      this.throwCutoffConflict(cutoff, conflictingClosure);
+  }
+
+  private throwCutoffConflict(cutoff: number, conflicting: object): never {
     throw new HttpException(
       {
         ...exceptionContentsIs("BUSINESS_HOURS_OUT_OF_RANGE"),

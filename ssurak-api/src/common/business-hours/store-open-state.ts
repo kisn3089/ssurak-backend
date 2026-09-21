@@ -126,8 +126,16 @@ function findNextOpenAt(
     const plan = dayPlanFor(date, businessHours, closures);
 
     if (plan.kind === "closed") continue;
-    // 항상 영업인 매장이 여기 오는 경우는 수동 차단뿐이라 예약된 재개 시각이 없다.
-    if (plan.kind === "always") return null;
+
+    if (plan.kind === "always") {
+      const at = businessDateMinuteToDate(
+        date,
+        store.businessDayCutoff,
+        store.timezone
+      );
+      if (at.getTime() > now.getTime()) return at;
+      continue;
+    }
 
     const { openMinute, breakEndMinute } = plan.window;
     const candidates =

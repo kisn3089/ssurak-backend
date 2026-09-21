@@ -265,7 +265,7 @@ export class BusinessHoursService {
       throw new HttpException(
         {
           ...exceptionContentsIs("BUSINESS_HOURS_OUT_OF_RANGE"),
-          details: { cutoff, dayOfWeek: day },
+          details: { cutoff, ...day },
         },
         HttpStatus.BAD_REQUEST
       );
