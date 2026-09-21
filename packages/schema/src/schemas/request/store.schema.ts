@@ -48,7 +48,7 @@ export const createStorePayloadSchema = z
       .max(500, "매장 설명은 최대 500자까지 가능합니다.")
       .nullable()
       .optional(),
-    isOpen: z.boolean().optional(),
+    isPaused: z.boolean().optional(),
     // DB가 VarChar(500)이므로 그 이상은 받지 않는다.
     acceptedMessage: z
       .string()

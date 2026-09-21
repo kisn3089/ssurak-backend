@@ -380,10 +380,10 @@ describe("Store Business Hours API (e2e)", () => {
   });
 
   describe("GET /stores/v1/:storeId/business-status", () => {
-    it("영업시간 미설정이고 수동 스위치가 켜져 있으면 영업 중이다", async () => {
+    it("영업시간 미설정이고 중지되지 않았으면 영업 중이다", async () => {
       await prisma.store.update({
         where: { id: owner.stores[0].id },
-        data: { isOpen: true },
+        data: { isPaused: false },
       });
 
       const response = await auth(
@@ -394,10 +394,10 @@ describe("Store Business Hours API (e2e)", () => {
       expect(response.body.businessDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     });
 
-    it("수동 스위치가 꺼져 있으면 MANUALLY_CLOSED", async () => {
+    it("점주가 일시 중지했으면 MANUALLY_CLOSED", async () => {
       await prisma.store.update({
         where: { id: owner.stores[0].id },
-        data: { isOpen: false },
+        data: { isPaused: true },
       });
 
       const response = await auth(

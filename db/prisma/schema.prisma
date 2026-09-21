@@ -95,9 +95,11 @@ model Store {
   description     String?  @db.Text
   /**
    * 영업시간과 무관하게 점주가 주문을 즉시 막는 "일시 중지" 스위치.
-   * 영업 여부 판정에서 가장 먼저 평가된다 — false면 영업시간 안이어도 주문을 받지 않는다.
+   * 영업 여부 판정에서 가장 먼저 평가된다 — true면 영업시간 안이어도 주문을 받지 않는다.
+   * 계산 결과인 StoreOpenState.isOpen과 반대 극성인 것은 의도적이다 —
+   * 응답에서 둘이 나란히 놓이므로 이름이 겹치면 프론트가 틀린 쪽을 읽는다.
    */
-  isOpen          Boolean  @default(true) @map("is_open")
+  isPaused        Boolean  @default(false) @map("is_paused")
   acceptedMessage String?  @map("accepted_message") @db.VarChar(500)
   /** 영업시간 판정 기준 타임존. DateTime은 UTC로 저장되므로 판정에는 이 값이 필수다. */
   timezone        String   @default("Asia/Seoul") @db.VarChar(40)

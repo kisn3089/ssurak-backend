@@ -43,7 +43,7 @@ export interface StoreClosure {
 export const StoreOpenReason = {
   /** 주문을 받을 수 있다 */
   OPEN: "OPEN",
-  /** 점주가 수동으로 주문을 막았다 (Store.isOpen === false) */
+  /** 점주가 수동으로 주문을 막았다 (Store.isPaused === true) */
   MANUALLY_CLOSED: "MANUALLY_CLOSED",
   /** 해당 날짜가 임시 휴무일이다 */
   HOLIDAY: "HOLIDAY",

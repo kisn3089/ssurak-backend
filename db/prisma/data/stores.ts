@@ -5,7 +5,7 @@ export type StoreSeed = {
   addressDetail: string;
   phone: string;
   description: string;
-  isOpen: boolean;
+  isPaused: boolean;
   timezone: string;
   businessDayCutoff: number;
   orderNumberPrefix: string;
@@ -20,7 +20,7 @@ export const demoStoreSeed: StoreSeed = {
   addressDetail: "2층",
   phone: "02-1234-5678",
   description: "개발용 테스트 카페입니다.",
-  isOpen: true,
+  isPaused: false,
   timezone: "Asia/Seoul",
   businessDayCutoff: 300,
   orderNumberPrefix: "A",
@@ -33,7 +33,7 @@ export const testStoreSeed: StoreSeed = {
   addressDetail: "1층",
   phone: "02-1111-5678",
   description: "테스트 카페입니다.",
-  isOpen: true,
+  isPaused: false,
   timezone: "Asia/Seoul",
   businessDayCutoff: 300,
   orderNumberPrefix: "A",

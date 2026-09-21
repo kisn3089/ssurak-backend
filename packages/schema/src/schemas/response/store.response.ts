@@ -10,10 +10,10 @@ export const publicStoreSchema = z.object({
   address: z.string().describe("매장 주소"),
   addressDetail: z.string().nullable().describe("매장 상세 주소"),
   description: z.string().nullable().describe("매장 설명"),
-  isOpen: z
+  isPaused: z
     .boolean()
     .describe(
-      "점주의 수동 영업 스위치. 실제 주문 가능 여부는 openState로 판단"
+      "점주의 일시 중지 스위치. 실제 주문 가능 여부는 openState.isOpen으로 판단"
     ),
   acceptedMessage: z.string().nullable().describe("주문 접수 메시지"),
   timezone: z.string().describe("영업시간 판정 기준 타임존"),

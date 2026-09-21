@@ -11,10 +11,11 @@ export interface Store {
   addressDetail: string | null;
   description: string | null;
   /**
-   * 영업시간과 무관한 점주의 수동 스위치.
-   * "지금 주문 가능한가"는 이 값이 아니라 `StoreOpenState.isOpen`으로 판단해야 한다.
+   * 점주의 "일시 중지" 스위치. 영업시간과 무관하게 주문을 즉시 막는다.
+   * "지금 주문 가능한가"는 이 값이 아니라 `StoreOpenState.isOpen`으로 판단한다 —
+   * 이 값이 false여도 브레이크타임·휴무일이면 주문은 거절된다.
    */
-  isOpen: boolean;
+  isPaused: boolean;
   /** 주문 접수 시 고객에게 노출할 안내 메시지 */
   acceptedMessage: string | null;
   /** 영업시간 판정 기준 타임존 (예: "Asia/Seoul") */

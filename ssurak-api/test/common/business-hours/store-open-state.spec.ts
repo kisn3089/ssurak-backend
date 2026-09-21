@@ -9,7 +9,7 @@ import {
 const SEOUL = {
   timezone: "Asia/Seoul",
   businessDayCutoff: 300,
-  isOpen: true,
+  isPaused: false,
 };
 
 const kst = (iso: string): Date => new Date(`${iso}+09:00`);
@@ -37,10 +37,10 @@ const resolve = (input: {
   now: Date;
   businessHours?: BusinessHourRow[];
   closures?: ClosureRow[];
-  isOpen?: boolean;
+  isPaused?: boolean;
 }) =>
   resolveStoreOpenState({
-    store: { ...SEOUL, isOpen: input.isOpen ?? true },
+    store: { ...SEOUL, isPaused: input.isPaused ?? false },
     businessHours: input.businessHours ?? [],
     closures: input.closures ?? [],
     now: input.now,
@@ -54,11 +54,11 @@ describe("resolveStoreOpenState", () => {
     expect(state.reason).toBe(StoreOpenReason.OPEN);
   });
 
-  it("수동 차단이 다른 모든 조건보다 앞선다", () => {
+  it("수동 중지가 다른 모든 조건보다 앞선다", () => {
     const state = resolve({
       now: kst("2026-08-26T12:00"),
       businessHours: everyDay(),
-      isOpen: false,
+      isPaused: true,
     });
 
     expect(state.isOpen).toBe(false);

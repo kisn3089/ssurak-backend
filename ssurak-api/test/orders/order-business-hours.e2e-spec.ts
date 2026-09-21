@@ -46,7 +46,7 @@ describe("주문 — 영업시간과 주문번호 (통합)", () => {
     });
     await prisma.store.update({
       where: { id: domain.store.id },
-      data: { isOpen: true },
+      data: { isPaused: false },
     });
   });
 
@@ -126,10 +126,10 @@ describe("주문 — 영업시간과 주문번호 (통합)", () => {
       );
     });
 
-    it("점주가 수동으로 닫아도 거절한다", async () => {
+    it("점주가 일시 중지하면 거절한다", async () => {
       await prisma.store.update({
         where: { id: domain.store.id },
-        data: { isOpen: false },
+        data: { isPaused: true },
       });
       const session = await sessionWithCart();
 

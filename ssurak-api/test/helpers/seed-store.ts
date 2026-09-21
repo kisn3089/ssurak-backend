@@ -56,7 +56,7 @@ export async function seedStoreDomain(
     },
   });
 
-  // 영업시간 행은 만들지 않는다(= 항상 영업). isOpen도 기본값이 true라
+  // 영업시간 행은 만들지 않는다(= 항상 영업). isPaused도 기본값이 false라
   // 이 매장은 언제든 주문을 받는다. 거절 경로를 보려면 setBusinessHours를 쓴다.
   const store = await prisma.store.create({
     data: {

@@ -10,7 +10,7 @@ import {
 
 const STORE_SCHEDULE_SELECT = {
   id: true,
-  isOpen: true,
+  isPaused: true,
   timezone: true,
   businessDayCutoff: true,
   orderNumberPrefix: true,
@@ -18,7 +18,7 @@ const STORE_SCHEDULE_SELECT = {
 
 export type StoreSchedule = {
   id: bigint;
-  isOpen: boolean;
+  isPaused: boolean;
   timezone: string;
   businessDayCutoff: number;
   orderNumberPrefix: string;

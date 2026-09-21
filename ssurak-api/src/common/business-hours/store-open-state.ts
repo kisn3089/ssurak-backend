@@ -42,7 +42,7 @@ export type StoreOpenState = {
 };
 
 export type ResolveStoreOpenStateInput = {
-  store: BusinessDayConfig & { isOpen: boolean };
+  store: BusinessDayConfig & { isPaused: boolean };
   businessHours: BusinessHourRow[];
   closures: ClosureRow[];
   now: Date;
@@ -163,8 +163,8 @@ export function resolveStoreOpenState(
     closesAt: null,
   });
 
-  // 수동 차단은 스케줄로 풀리지 않는다 — 점주가 다시 켜야 하므로 nextOpenAt은 없다.
-  if (!store.isOpen) {
+  // 수동 중지는 스케줄로 풀리지 않는다 — 점주가 직접 해제해야 하므로 nextOpenAt은 없다.
+  if (store.isPaused) {
     return closed(StoreOpenReason.MANUALLY_CLOSED, null);
   }
 

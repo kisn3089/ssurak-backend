@@ -42,7 +42,7 @@ const storeRow: Store = {
   address: "서울시 어딘가",
   addressDetail: null,
   description: null,
-  isOpen: true,
+  isPaused: false,
   acceptedMessage: null,
   timezone: "Asia/Seoul",
   businessDayCutoff: 300,
