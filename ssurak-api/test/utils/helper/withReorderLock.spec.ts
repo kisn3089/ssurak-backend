@@ -16,10 +16,24 @@ const LOCK_NAME = `reorder:${STORE_ID}`;
 /** 인터랙티브 트랜잭션이 넘겨주는 tx 클라이언트 자리. */
 const tx = mockDeep<PrismaService>();
 
+/** Prisma.sql이 만든 태그드 템플릿인지 형태로 판별한다. */
+const isTaggedSql = (
+  value: unknown
+): value is { strings: unknown[]; values: unknown[] } => {
+  if (typeof value !== "object" || value === null) return false;
+  if (!("strings" in value) || !("values" in value)) return false;
+  return Array.isArray(value.strings) && Array.isArray(value.values);
+};
+
 /** Prisma.sql 태그드 템플릿에서 SQL 본문과 바인딩 값을 꺼낸다. */
 const sqlOf = (call: unknown[]) => {
-  const [sql] = call as [{ strings?: string[]; values?: unknown[] }];
-  return { text: sql.strings?.join("") ?? "", values: sql.values ?? [] };
+  const [sql] = call;
+  if (!isTaggedSql(sql)) {
+    throw new Error(
+      `Prisma.sql 태그드 템플릿이 아닙니다 — 실제: ${String(sql)}`
+    );
+  }
+  return { text: sql.strings.join(""), values: sql.values };
 };
 
 /**
@@ -132,16 +146,17 @@ describe("withReorderLock 해제 실패", () => {
   // 트랜잭션 예산이 먼저 소진되면 tx가 닫혀 RELEASE_LOCK 자체가 P2028로 실패한다.
   const p2028 = new Error("Transaction already closed");
 
-  /** GET_LOCK·작업 쿼리는 성공시키고 RELEASE_LOCK만 실패시킨다. */
-  const failRelease = () => {
-    tx.$queryRaw.mockImplementation(((...args: unknown[]) =>
-      sqlOf(args).text.includes("RELEASE_LOCK")
-        ? Promise.reject(p2028)
-        : Promise.resolve([{ acquired: 1 }])) as never);
+  /**
+   * 락 안에서 쿼리를 날리지 않는 fn을 쓰므로 순서는 GET_LOCK → RELEASE_LOCK
+   * 둘뿐이다. 해제가 실제로 그 자리에 왔는지는 각 테스트의 trace()가 본다.
+   */
+  const acquireThenFailRelease = () => {
+    tx.$queryRaw.mockResolvedValueOnce([{ acquired: 1 }]);
+    tx.$queryRaw.mockRejectedValueOnce(p2028);
   };
 
   it("작업이 던진 에러를 해제 실패로 덮지 않는다", async () => {
-    failRelease();
+    acquireThenFailRelease();
 
     // 해제 실패가 이기면 집합 불일치 409가 400(PRISMA_ERROR)으로 바뀌어 나간다.
     await expectHttpExceptionAsync(
@@ -161,11 +176,14 @@ describe("withReorderLock 해제 실패", () => {
   });
 
   it("작업이 성공했다면 해제 실패를 삼키지 않는다", async () => {
-    failRelease();
+    acquireThenFailRelease();
 
     // 이 트랜잭션은 COMMIT에서 어차피 실패한다. 성공으로 보고하면 안 된다.
     await expect(
       withReorderLock(tx, STORE_ID, async () => "ok")
     ).rejects.toThrowError(p2028);
+
+    // 거부된 두 번째 호출이 정말 RELEASE_LOCK이었는지 확인한다.
+    expect(trace()).toEqual(["GET_LOCK", "RELEASE_LOCK"]);
   });
 });

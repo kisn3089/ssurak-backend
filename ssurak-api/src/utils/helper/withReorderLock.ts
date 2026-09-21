@@ -58,12 +58,17 @@ export async function withReorderLock<T>(
   const release = () =>
     tx.$queryRaw(Prisma.sql`SELECT RELEASE_LOCK(${lockName})`);
 
+  let workDone = false;
+
   try {
     const result = await fn();
+    workDone = true;
     await release();
     return result;
   } catch (error) {
-    await release().catch(() => undefined);
+    // 해제는 한 번만 시도한다. workDone이면 위 release()가 이미 실패한 것이라,
+    // 여기서 다시 부르면 닫힌 tx에 같은 쿼리를 한 번 더 내보내게 된다.
+    if (!workDone) await release().catch(() => undefined);
     throw error;
   }
 }
