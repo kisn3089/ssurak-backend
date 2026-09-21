@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockDeep } from "vitest-mock-extended";
-import { HttpStatus } from "@nestjs/common";
+import { HttpException, HttpStatus } from "@nestjs/common";
 import { Prisma } from "@ssurak/db";
 import { PrismaService } from "src/prisma/prisma.service";
+import { exceptionContentsIs } from "src/common/constants/exceptionContents";
 import { expectHttpExceptionAsync } from "test/helpers/expect-http-exception";
 import {
   REORDER_TX_TIMEOUT_MS,
@@ -124,5 +125,47 @@ describe("withReorderLock 락 해제", () => {
     ).rejects.toThrowError(failure);
 
     expect(trace()).toEqual(["GET_LOCK", "WORK", "RELEASE_LOCK"]);
+  });
+});
+
+describe("withReorderLock 해제 실패", () => {
+  // 트랜잭션 예산이 먼저 소진되면 tx가 닫혀 RELEASE_LOCK 자체가 P2028로 실패한다.
+  const p2028 = new Error("Transaction already closed");
+
+  /** GET_LOCK·작업 쿼리는 성공시키고 RELEASE_LOCK만 실패시킨다. */
+  const failRelease = () => {
+    tx.$queryRaw.mockImplementation(((...args: unknown[]) =>
+      sqlOf(args).text.includes("RELEASE_LOCK")
+        ? Promise.reject(p2028)
+        : Promise.resolve([{ acquired: 1 }])) as never);
+  };
+
+  it("작업이 던진 에러를 해제 실패로 덮지 않는다", async () => {
+    failRelease();
+
+    // 해제 실패가 이기면 집합 불일치 409가 400(PRISMA_ERROR)으로 바뀌어 나간다.
+    await expectHttpExceptionAsync(
+      () =>
+        withReorderLock(tx, STORE_ID, () =>
+          Promise.reject(
+            new HttpException(
+              exceptionContentsIs("CATEGORY_ORDER_MISMATCH"),
+              HttpStatus.CONFLICT
+            )
+          )
+        ),
+      { code: "CATEGORY_ORDER_MISMATCH", status: HttpStatus.CONFLICT }
+    );
+
+    expect(trace()).toEqual(["GET_LOCK", "RELEASE_LOCK"]);
+  });
+
+  it("작업이 성공했다면 해제 실패를 삼키지 않는다", async () => {
+    failRelease();
+
+    // 이 트랜잭션은 COMMIT에서 어차피 실패한다. 성공으로 보고하면 안 된다.
+    await expect(
+      withReorderLock(tx, STORE_ID, async () => "ok")
+    ).rejects.toThrowError(p2028);
   });
 });

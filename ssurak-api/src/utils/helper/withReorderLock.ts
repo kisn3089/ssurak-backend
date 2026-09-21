@@ -27,7 +27,7 @@ export const REORDER_TX_TIMEOUT_MS =
  * RELEASE_LOCK이 아무것도 풀지 못해 락이 커넥션 수명만큼 남고 이후 재정렬이 전부 막히므로,
  * 커넥션이 고정되는 인터랙티브 트랜잭션 안에서만 획득·해제한다.
  *
- * 그래서 아래 finally의 RELEASE_LOCK이 사실상 유일한 해제 경로다. 세션 락이라 ROLLBACK으로는
+ * 그래서 아래 release()의 RELEASE_LOCK이 사실상 유일한 해제 경로다. 세션 락이라 ROLLBACK으로는
  * 풀리지 않고, MySQL이 자동 정리하는 시점은 **세션 종료**뿐인데 풀 반납은 세션 종료가 아니다.
  * 트랜잭션 예산이 먼저 소진되면 tx 클라이언트가 닫혀 RELEASE_LOCK 자체가 P2028로 실패하고,
  * 락은 그 커넥션이 실제로 끊길 때까지(MySQL wait_timeout, 기본 8시간) 남는다.
@@ -55,9 +55,15 @@ export async function withReorderLock<T>(
     );
   }
 
+  const release = () =>
+    tx.$queryRaw(Prisma.sql`SELECT RELEASE_LOCK(${lockName})`);
+
   try {
-    return await fn();
-  } finally {
-    await tx.$queryRaw(Prisma.sql`SELECT RELEASE_LOCK(${lockName})`);
+    const result = await fn();
+    await release();
+    return result;
+  } catch (error) {
+    await release().catch(() => undefined);
+    throw error;
   }
 }
