@@ -62,7 +62,7 @@ export const createStorePayloadSchema = z
       .trim()
       .max(40, "타임존은 최대 40자까지 가능합니다.")
       .regex(
-        /^[A-Za-z_]+(?:\/[A-Za-z_+-][A-Za-z0-9_+-]*)+$/,
+        /^[A-Za-z_]+(?:\/[A-Za-z_+-][A-Za-z0-9_+-]*)*$/,
         "올바른 타임존 이름을 입력해 주세요. (예: Asia/Seoul)"
       )
       .optional(),
