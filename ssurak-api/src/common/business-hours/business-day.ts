@@ -22,7 +22,8 @@ export type ZonedParts = {
 
 /**
  * Intl.DateTimeFormat 생성은 비싸다. 타임존 수가 매장 수보다 훨씬 적으므로
- * 프로세스 수명 동안 캐싱해도 메모리가 늘지 않는다.
+ * 프로세스 수명 동안 캐싱해도 메모리가 늘지 않는다 —
+ * 단, 키는 반드시 Intl이 정규화한 이름이어야 한다(`formatterFor` 참고).
  */
 const formatterCache = new Map<string, Intl.DateTimeFormat>();
 
@@ -41,7 +42,11 @@ function formatterFor(timezone: string): Intl.DateTimeFormat {
     minute: "2-digit",
   });
 
-  formatterCache.set(timezone, formatter);
+  const canonical = formatter.resolvedOptions().timeZone;
+  const canonicalCached = formatterCache.get(canonical);
+  if (canonicalCached) return canonicalCached;
+
+  formatterCache.set(canonical, formatter);
   return formatter;
 }
 
