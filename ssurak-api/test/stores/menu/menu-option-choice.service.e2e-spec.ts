@@ -500,8 +500,9 @@ describe("MenuOptionChoiceService (통합)", () => {
 
         // 기본 5초를 그대로 쓰면 GET_LOCK을 3초 기다린 요청에 2초만 남아 P2028이 나고,
         // ORM 레벨 오류가 집합 검증을 선점해 409 대신 400(PRISMA_ERROR)이 나간다.
-        const calls = txSpy.mock.calls as unknown as unknown[][];
-        expect(calls.at(-1)?.[1]).toEqual({ timeout: REORDER_TX_TIMEOUT_MS });
+        expect(txSpy.mock.calls.at(-1)?.[1]).toEqual({
+          timeout: REORDER_TX_TIMEOUT_MS,
+        });
       } finally {
         // 단언이 실패해도 앱 전역 PrismaService에 스파이가 남으면 안 된다.
         txSpy.mockRestore();
