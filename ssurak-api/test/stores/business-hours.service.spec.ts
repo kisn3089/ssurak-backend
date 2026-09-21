@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { mockDeep } from "vitest-mock-extended";
-import { HttpException } from "@nestjs/common";
 import { Owner, Store } from "@ssurak/db";
 import { StoreOpenStateService } from "src/common/business-hours";
 import { PrismaService } from "src/prisma/prisma.service";
 import { BusinessHoursService } from "src/stores/business-hours/business-hours.service";
+import { expectHttpExceptionAsync } from "test/helpers/expect-http-exception";
 
 const STORE_ID = "store-public-id";
 
@@ -55,15 +55,11 @@ const day = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const detailsOf = async (promise: Promise<unknown>): Promise<unknown> => {
-  const error = await promise.then(
-    () => null,
-    (caught: unknown) => caught
-  );
-
-  expect(error).toBeInstanceOf(HttpException);
-  return (error as HttpException).getResponse();
-};
+const outOfRange = (fn: () => Promise<unknown>) =>
+  expectHttpExceptionAsync(fn, {
+    code: "BUSINESS_HOURS_OUT_OF_RANGE",
+    status: 400,
+  });
 
 beforeEach(() => {
   prisma.store.findFirstOrThrow.mockResolvedValue(storeRow);
@@ -71,21 +67,22 @@ beforeEach(() => {
 
 describe("BusinessHoursService — 영업일 경계 위반 details", () => {
   it("요일 영업시간은 요일 번호와 위반한 시각을 그대로 담는다", async () => {
-    const response = await detailsOf(
-      // 02:00 오픈은 cutoff 05:00보다 앞서 영업일 밖이다.
+    // 02:00 오픈은 cutoff 05:00보다 앞서 영업일 밖이다.
+    const response = await outOfRange(() =>
       service.replaceBusinessHours(owner, STORE_ID, {
         days: [day({ openMinute: 120 })],
       })
     );
 
-    expect(response).toMatchObject({
-      code: "BUSINESS_HOURS_OUT_OF_RANGE",
-      details: { cutoff: 300, dayOfWeek: 3, openMinute: 120 },
+    expect(response.details).toMatchObject({
+      cutoff: 300,
+      dayOfWeek: 3,
+      openMinute: 120,
     });
   });
 
   it("특별 영업시간은 요일이 없으므로 시각만 담는다", async () => {
-    const response = await detailsOf(
+    const response = await outOfRange(() =>
       service.createClosure(owner, STORE_ID, {
         date: "2026-10-01",
         openMinute: 120,
@@ -93,9 +90,7 @@ describe("BusinessHoursService — 영업일 경계 위반 details", () => {
       })
     );
 
-    const { details } = response as { details: Record<string, unknown> };
-
-    expect(details).toMatchObject({ cutoff: 300, openMinute: 120 });
-    expect(details).not.toHaveProperty("dayOfWeek");
+    expect(response.details).toMatchObject({ cutoff: 300, openMinute: 120 });
+    expect(response.details).not.toHaveProperty("dayOfWeek");
   });
 });

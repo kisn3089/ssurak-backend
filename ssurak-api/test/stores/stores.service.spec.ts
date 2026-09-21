@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockDeep } from "vitest-mock-extended";
-import { HttpException } from "@nestjs/common";
 import { Owner, Store } from "@ssurak/db";
 import { PrismaService } from "src/prisma/prisma.service";
+import { expectHttpExceptionAsync } from "test/helpers/expect-http-exception";
 import { StoresService } from "src/stores/stores/stores.service";
 
 const STORE_ID = "store-public-id";
@@ -64,12 +64,6 @@ const updateCutoff = (cutoff: number, timezone?: string) =>
     ...(timezone ? { timezone } : {}),
   });
 
-const catchError = async (promise: Promise<unknown>): Promise<unknown> =>
-  await promise.then(
-    () => null,
-    (error: unknown) => error
-  );
-
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
@@ -91,16 +85,14 @@ describe("StoresService.partialUpdateStore — businessDayCutoff 가드", () => 
   it("경계 밖으로 밀리는 특별 영업시간이 있으면 거절한다", async () => {
     prisma.storeClosure.findFirst.mockResolvedValue(closureRow);
 
-    const error = await catchError(updateCutoff(720));
-
-    expect(error).toBeInstanceOf(HttpException);
-    expect((error as HttpException).getStatus()).toBe(400);
-    expect((error as HttpException).getResponse()).toMatchObject({
+    const response = await expectHttpExceptionAsync(() => updateCutoff(720), {
       code: "BUSINESS_HOURS_OUT_OF_RANGE",
-      details: {
-        cutoff: 720,
-        conflicting: expect.objectContaining({ date: "2026-10-01" }),
-      },
+      status: 400,
+    });
+
+    expect(response.details).toMatchObject({
+      cutoff: 720,
+      conflicting: expect.objectContaining({ date: "2026-10-01" }),
     });
     expect(prisma.store.update).not.toHaveBeenCalled();
   });
