@@ -2,6 +2,8 @@ import { Module } from "@nestjs/common";
 import { PassportModule } from "@nestjs/passport";
 import { JwtModule } from "@nestjs/jwt";
 import { StoresController } from "./stores/stores.controller";
+import { BusinessHoursController } from "./business-hours/business-hours.controller";
+import { BusinessHoursService } from "./business-hours/business-hours.service";
 import { StoresService } from "./stores/stores.service";
 import { MenuController } from "./menu/menu.controller";
 import { MenuService } from "./menu/menu.service";
@@ -27,6 +29,7 @@ import { OpenAiModule } from "src/common/ai/openai.module";
   imports: [PassportModule, JwtModule, StorageModule, OpenAiModule],
   controllers: [
     StoresController,
+    BusinessHoursController,
     MenuDraftController, // MenuController의 `GET :menuId`가 "drafts"를 메뉴 ID로 삼키지 않도록 먼저 등록한다.
     MenuController,
     TableController,
@@ -37,6 +40,7 @@ import { OpenAiModule } from "src/common/ai/openai.module";
   ],
   providers: [
     StoresService,
+    BusinessHoursService,
     MenuService,
     MenuPurgeService,
     MenuDraftService,

@@ -42,26 +42,49 @@ export const createStorePayloadSchema = z
       )
       .nullable()
       .optional(),
-    // TODO: 추후 holiday, breakTime로 변경하고 해당 필드들은 제거한다.
-    businessHours: z
-      .string()
-      .trim()
-      .max(100, "영업 시간은 최대 100자까지 가능합니다.")
-      .nullable()
-      .optional(),
     description: z
       .string()
       .trim()
       .max(500, "매장 설명은 최대 500자까지 가능합니다.")
       .nullable()
       .optional(),
-    isOpen: z.boolean().optional(),
+    isPaused: z.boolean().optional(),
     // DB가 VarChar(500)이므로 그 이상은 받지 않는다.
     acceptedMessage: z
       .string()
       .trim()
       .max(500, "주문 접수 메시지는 최대 500자까지 가능합니다.")
       .nullable()
+      .optional(),
+    // IANA 타임존 이름. 형식만 보고 실재 여부는 서비스에서 Intl로 검증한다.
+    timezone: z
+      .string()
+      .trim()
+      .max(40, "타임존은 최대 40자까지 가능합니다.")
+      .regex(
+        /^[A-Za-z_]+(?:\/[A-Za-z_+-][A-Za-z0-9_+-]*)*$/,
+        "올바른 타임존 이름을 입력해 주세요. (예: Asia/Seoul)"
+      )
+      .optional(),
+    /**
+     * 영업일 경계(자정 기준 분). 어제 마감과 오늘 오픈 사이의 빈 구간이어야 하므로
+     * 하루의 절반을 넘지 않도록 상한을 둔다.
+     */
+    businessDayCutoff: z
+      .number()
+      .int("영업일 경계는 1분 단위 정수로 입력해 주세요.")
+      .min(0, "영업일 경계는 0분 이상이어야 합니다.")
+      .max(720, "영업일 경계는 정오(720분)를 넘을 수 없습니다.")
+      .optional(),
+    orderNumberPrefix: z
+      .string()
+      .trim()
+      .min(1, "주문번호 접두사는 필수입니다.")
+      .max(4, "주문번호 접두사는 최대 4자까지 가능합니다.")
+      .regex(
+        /^[A-Za-z0-9]+$/,
+        "주문번호 접두사는 영문·숫자만 사용할 수 있습니다."
+      )
       .optional(),
   })
   .strict();

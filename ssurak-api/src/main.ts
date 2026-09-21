@@ -67,6 +67,10 @@ async function bootstrap() {
     },
   });
 
+  // SIGTERM/SIGINT에 onModuleDestroy를 태워 Prisma 커넥션을 실제로 닫는다.
+  // 이게 없으면 컨테이너가 죽어도 훅이 안 돌아 세션 정리가 TCP 단절 타이밍에 맡겨진다.
+  app.enableShutdownHooks();
+
   const port = configService.get<number>("PORT", 8080);
 
   await app.listen(port, "0.0.0.0");

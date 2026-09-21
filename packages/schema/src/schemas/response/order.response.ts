@@ -18,6 +18,9 @@ export const publicOrderSchema = z.object({
     .nullable()
     .describe("고객 주문 멱등성 키. 관리자 주문은 사용하지 않아 null이다."),
   status: z.nativeEnum(OrderStatus).describe("주문 상태"),
+  businessDate: z.string().describe("주문이 속한 영업일 (YYYY-MM-DD)"),
+  orderSeq: z.number().int().describe("영업일 내 주문 순번"),
+  orderNumber: z.string().describe("표시용 주문번호 (예: A-0001)"),
   memo: z.string().nullable().describe("메모"),
   cancelledReason: z.string().nullable().describe("취소 사유"),
   acceptedAt: isoDateTime().nullable().describe("접수 시간"),

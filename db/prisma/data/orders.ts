@@ -19,6 +19,12 @@ export type OrderSeed = {
   completedOffsetMin?: number;
 };
 
+/**
+ * 주문 순번은 배열 순서에서 결정적으로 파생한다(1부터).
+ * 시드는 멱등해야 하므로 실행 시각이나 랜덤에 기대면 안 된다.
+ */
+export const orderSeqOf = (index: number): number => index + 1;
+
 // session·order 시나리오는 testStore(owner@test.com)에만 적용한다.
 export const orderSeeds: OrderSeed[] = [
   // 테이블 1: 아메리카노 2잔 + 크로와상 (COMPLETED)

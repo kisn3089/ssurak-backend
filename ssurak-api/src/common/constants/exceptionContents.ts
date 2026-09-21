@@ -57,6 +57,24 @@ const EXCEPTION_CONTENTS = {
     code: "MENU_NOT_AVAILABLE",
     message: "요청한 메뉴는 비활성화 상태입니다.",
   },
+  /** ---Store Business Hours--- */
+  STORE_CLOSED: {
+    code: "STORE_CLOSED",
+    message: "지금은 주문을 받지 않는 시간입니다.",
+  },
+  BUSINESS_HOURS_OUT_OF_RANGE: {
+    code: "BUSINESS_HOURS_OUT_OF_RANGE",
+    message:
+      "영업 시간이 영업일 경계를 벗어났습니다. 영업일 시작 시각 이후부터 24시간 안으로 설정해 주세요.",
+  },
+  INVALID_TIMEZONE: {
+    code: "INVALID_TIMEZONE",
+    message: "지원하지 않는 타임존입니다.",
+  },
+  CLOSURE_ALREADY_EXISTS: {
+    code: "CLOSURE_ALREADY_EXISTS",
+    message: "이미 등록된 날짜입니다. 기존 휴무일을 수정해 주세요.",
+  },
   /** ---Table--- */
   TABLE_INACTIVE: {
     code: "TABLE_INACTIVE",
@@ -103,6 +121,11 @@ const EXCEPTION_CONTENTS = {
   ORDER_ALREADY_CANCELLED: {
     code: "ORDER_ALREADY_CANCELLED",
     message: "취소된 주문은 변경할 수 없습니다.",
+  },
+  ORDER_NUMBER_CONFLICT: {
+    code: "ORDER_NUMBER_CONFLICT",
+    message:
+      "주문이 몰려 주문번호를 발급하지 못했습니다. 잠시 후 다시 시도해 주세요.",
   },
   ORDER_STATUS_INVALID_TRANSITION: {
     code: "ORDER_STATUS_INVALID_TRANSITION",

@@ -14,6 +14,12 @@ export type CreatedOrder = PublicOrderWithItem<
   { sessionToken: string; expiresAt: Date }
 >;
 export type UpdatedOrder = PublicOrderWithItem<"Wide">;
+/**
+ * 영업시간 강제 여부. 고객 주문만 켠다 —
+ * 점주 대리 주문은 마감 후에도 넣을 수 있어야 한다.
+ */
+export type CreateOrderOptions = { enforceBusinessHours: boolean };
+
 export type CreateOrderPayload = {
   orderItems: ValidatableOrderItem[];
   memo?: string;

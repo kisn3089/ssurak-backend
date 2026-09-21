@@ -30,6 +30,7 @@ export const paramsDocs = {
   orderItemId: { name: "orderItemId", description: "주문 항목 고유 ID" },
   ownerId: { name: "ownerId", description: "매장 소유자 고유 ID" },
   sessionId: { name: "sessionId", description: "세션 고유 ID" },
+  closureId: { name: "closureId", description: "휴무일 고유 ID" },
   sessionToken: { name: "sessionToken", description: "세션 토큰" },
   adminId: { name: "adminId", description: "관리자 고유 ID" },
   query: {

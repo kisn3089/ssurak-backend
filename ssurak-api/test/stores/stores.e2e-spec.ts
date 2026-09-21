@@ -125,8 +125,9 @@ describe("Stores API (e2e)", () => {
 
       expect(response.body.name).toBe("e2e-created-store");
       expect(response.body.phone).toBe("02-123-4567");
-      // 스키마에 없는 값은 DB 기본값을 따른다
-      expect(response.body.isOpen).toBe(false);
+      // 스키마에 없는 값은 DB 기본값을 따른다.
+      // isPaused는 "일시 중지" 스위치라 기본이 꺼짐 — 만들자마자 주문을 받을 수 있어야 한다.
+      expect(response.body.isPaused).toBe(false);
       expect(response.body).not.toHaveProperty("id");
       expect(response.body).not.toHaveProperty("ownerId");
 
@@ -167,12 +168,12 @@ describe("Stores API (e2e)", () => {
       const response = await request(app.getHttpServer())
         .patch(`/stores/v1/${target.publicId}`)
         .set("Authorization", `Bearer ${tokenA}`)
-        .send({ name: "e2e-renamed-store", isOpen: true })
+        .send({ name: "e2e-renamed-store", isPaused: true })
         .expect(200);
 
       expect(response.body.publicId).toBe(target.publicId);
       expect(response.body.name).toBe("e2e-renamed-store");
-      expect(response.body.isOpen).toBe(true);
+      expect(response.body.isPaused).toBe(true);
       expect(response.body.address).toBe(target.address);
     });
 

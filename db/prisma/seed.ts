@@ -7,7 +7,12 @@ import { categorySeeds } from "./data/categories";
 import { menuSeeds, suffixed, toOptionGroupSeedInput } from "./data/menus";
 import { demoTableSeeds, testTableSeeds } from "./data/tables";
 import { tableSessionSeeds } from "./data/sessions";
-import { orderSeeds, orderItemSeeds } from "./data/orders";
+import { orderSeeds, orderItemSeeds, orderSeqOf } from "./data/orders";
+import {
+  demoBusinessHourSeeds,
+  demoClosureSeeds,
+  testBusinessHourSeeds,
+} from "./data/businessHours";
 
 const prisma = new PrismaClient();
 
@@ -22,6 +27,41 @@ const SEED_CDN_BASE_URL = (
 
 async function encryptPassword(value: string): Promise<string> {
   return await bcrypt.hash(value, 10);
+}
+
+/**
+ * 영업일 키 "YYYY-MM-DD".
+ * API의 getBusinessDate와 같은 규칙이지만, 시드는 @ssurak/db만 의존하므로
+ * ssurak-api의 유틸을 import하지 않고 같은 계산을 여기서 한다.
+ */
+function businessDateOf(
+  at: Date,
+  timezone: string,
+  cutoffMinute: number
+): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(at);
+
+  const valueOf = (type: string) =>
+    Number(parts.find((part) => part.type === type)?.value ?? 0);
+
+  const minuteOfDay = valueOf("hour") * 60 + valueOf("minute");
+  const shifted = new Date(
+    Date.UTC(
+      valueOf("year"),
+      valueOf("month") - 1,
+      valueOf("day") + (minuteOfDay >= cutoffMinute ? 0 : -1)
+    )
+  );
+
+  return shifted.toISOString().slice(0, 10);
 }
 
 async function main() {
@@ -92,6 +132,49 @@ async function main() {
     demoStore: demoStore.name,
     testStore: testStore.name,
   });
+
+  // ==================== 영업시간·휴무일 데이터 ====================
+  console.log("📝 Creating business hours...");
+  for (const [store, hourSeeds] of [
+    [demoStore, demoBusinessHourSeeds],
+    [testStore, testBusinessHourSeeds],
+  ] as const) {
+    for (const hour of hourSeeds) {
+      await prisma.storeBusinessHour.upsert({
+        where: {
+          storeId_dayOfWeek: { storeId: store.id, dayOfWeek: hour.dayOfWeek },
+        },
+        update: {},
+        create: {
+          storeId: store.id,
+          dayOfWeek: hour.dayOfWeek,
+          isClosed: hour.isClosed,
+          openMinute: hour.openMinute,
+          closeMinute: hour.closeMinute,
+          breakStartMinute: hour.breakStartMinute ?? null,
+          breakEndMinute: hour.breakEndMinute ?? null,
+        },
+      });
+    }
+  }
+
+  // 휴무일은 시드 실행 연도에 붙인다 — 해가 바뀌면 다음 실행이 새 연도로 하나 더 만든다.
+  const seedYear = new Date().getFullYear();
+  for (const closure of demoClosureSeeds) {
+    const date = `${seedYear}-${closure.monthDay}`;
+    await prisma.storeClosure.upsert({
+      where: { storeId_date: { storeId: demoStore.id, date } },
+      update: {},
+      create: {
+        storeId: demoStore.id,
+        date,
+        reason: closure.reason,
+        openMinute: closure.openMinute ?? null,
+        closeMinute: closure.closeMinute ?? null,
+      },
+    });
+  }
+  console.log("✅ Business hours created");
 
   // ==================== Category 데이터 ====================
   console.log("📝 Creating categories...");
@@ -211,10 +294,18 @@ async function main() {
       ? new Date(now.getTime() - offsetMin * 60 * 1000)
       : undefined;
 
+  // 시드 주문은 모두 "지금"의 영업일에 속한다. cutoff를 반영해 계산한다.
+  const seedBusinessDate = businessDateOf(
+    now,
+    testStoreSeed.timezone,
+    testStoreSeed.businessDayCutoff
+  );
+
   const orderByPublicId = new Map<string, { id: bigint }>();
-  for (const order of orderSeeds) {
+  for (const [index, order] of orderSeeds.entries()) {
     const table = tableByNumber.get(order.tableNumber)!;
     const session = sessionByPublicId.get(order.sessionPublicId)!;
+    const orderSeq = orderSeqOf(index);
     const created = await prisma.order.upsert({
       where: { publicId: order.publicId },
       update: {},
@@ -224,6 +315,9 @@ async function main() {
         tableId: table.id,
         tableSessionId: session.id,
         status: order.status,
+        businessDate: seedBusinessDate,
+        orderSeq,
+        orderNumber: `${testStoreSeed.orderNumberPrefix}-${String(orderSeq).padStart(4, "0")}`,
         memo: order.memo ?? null,
         cancelledReason: order.cancelledReason,
         acceptedAt: offsetToDate(order.acceptedOffsetMin),

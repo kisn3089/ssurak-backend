@@ -32,6 +32,7 @@ import { Session } from "src/decorators/session.decorator";
 import { SessionAuth } from "src/utils/guards/table-session-auth.guard";
 import { responseCookie } from "src/utils/cookies";
 import { MenuImageService } from "src/common/image/menu-image.service";
+import { StoreOpenStateService } from "src/common/business-hours";
 
 export type UpdateCustomerTableSessionDto = z.infer<
   typeof updateCustomerSessionPayloadSchema
@@ -42,7 +43,8 @@ export type UpdateCustomerTableSessionDto = z.infer<
 export class CustomerSessionController {
   constructor(
     private readonly sessionService: SessionService,
-    private readonly menuImageService: MenuImageService
+    private readonly menuImageService: MenuImageService,
+    private readonly storeOpenState: StoreOpenStateService
   ) {}
 
   @Post()
@@ -120,12 +122,16 @@ export class CustomerSessionController {
     );
     const { store } = storeUntilMenus.table;
 
+    // 메뉴판 진입 한 번으로 주문 가능 여부까지 알 수 있어야 주문 버튼을 바로 잠글 수 있다.
+    const { state } = await this.storeOpenState.storeOpenState(store);
+
     return TableWithStoreContextDto.schema.parse({
       ...storeUntilMenus,
       table: {
         ...storeUntilMenus.table,
         store: {
           ...store,
+          openState: state,
           categories: store.categories.map((category) => ({
             ...category,
             menus: this.menuImageService.toViewList(category.menus),
