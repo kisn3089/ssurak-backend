@@ -46,7 +46,7 @@ export class MenuPurgeService {
     @Inject(REDLOCK_CLIENT) private readonly redlock: RedlockLike
   ) {}
 
-  @Cron(CronExpression.EVERY_DAY_AT_5AM)
+  @Cron(CronExpression.EVERY_DAY_AT_5AM, { timeZone: "Asia/Seoul" })
   async purgeExpiredMenus(): Promise<MenuPurgeSummary | null> {
     try {
       // retryCount: 0 — 다른 인스턴스가 이미 돌고 있으면 기다리지 않고 넘긴다.

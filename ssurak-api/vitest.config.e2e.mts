@@ -40,6 +40,8 @@ export default defineConfig(({ mode }) => ({
     environment: "node",
     root: "./",
     include: ["test/**/*.e2e-spec.ts"],
+    // 시드 헬퍼가 등록한 계정을 파일 종료 시 정리 (시드 중간 실패 포함)
+    setupFiles: ["./test/setup/e2e-cleanup.ts"],
     // 루트 .env의 REDIS_* 등을 process.env로 주입 (prefix 제한 없음)
     env: loadEnv(mode, fileURLToPath(new URL("..", import.meta.url)), ""),
     // 락 경합 테스트(redlock retry) 등 실제 I/O 대기 여유

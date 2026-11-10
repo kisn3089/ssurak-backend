@@ -14,6 +14,7 @@ import {
 import type { MenuOptionSelection } from "@ssurak/schema";
 import { PrismaService } from "src/prisma/prisma.service";
 import { encrypt, generateSecureSessionToken } from "src/utils/lib/crypt";
+import { purgeOwner, trackOwner } from "test/helpers/e2e-cleanup";
 
 /** 테스트가 옵션·선택지 publicId를 읽어야 하므로 관계를 함께 들고 다닌다. */
 export type MenuWithOptions = Prisma.MenuGetPayload<{
@@ -55,6 +56,8 @@ export async function seedStoreDomain(
       isActive: true,
     },
   });
+  // 이후 생성이 실패해도 setup 파일이 이 owner 기준으로 매장 데이터까지 지운다.
+  trackOwner(owner.id);
 
   // 영업시간 행은 만들지 않는다(= 항상 영업). isPaused도 기본값이 false라
   // 이 매장은 언제든 주문을 받는다. 거절 경로를 보려면 setBusinessHours를 쓴다.
@@ -295,18 +298,5 @@ export async function cleanupStoreDomain(
   prisma: PrismaService,
   domain: SeededStoreDomain
 ): Promise<void> {
-  const storeId = domain.store.id;
-  await prisma.storeBusinessHour.deleteMany({ where: { storeId } });
-  await prisma.storeClosure.deleteMany({ where: { storeId } });
-  await prisma.orderItem.deleteMany({ where: { order: { storeId } } });
-  await prisma.order.deleteMany({ where: { storeId } });
-  await prisma.tableSession.deleteMany({ where: { table: { storeId } } });
-  await prisma.menu.deleteMany({ where: { category: { storeId } } });
-  await prisma.category.deleteMany({ where: { storeId } });
-  await prisma.table.deleteMany({ where: { storeId } });
-  await prisma.store.delete({ where: { id: storeId } });
-  await prisma.authSession.deleteMany({
-    where: { role: "owner", userId: domain.owner.id },
-  });
-  await prisma.owner.delete({ where: { id: domain.owner.id } });
+  await purgeOwner(prisma, domain.owner.id);
 }

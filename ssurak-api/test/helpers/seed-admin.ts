@@ -2,6 +2,7 @@ import { createId } from "@paralleldrive/cuid2";
 import type { Admin } from "@ssurak/db";
 import { PrismaService } from "src/prisma/prisma.service";
 import { encrypt } from "src/utils/lib/crypt";
+import { purgeAdmin, trackAdmin } from "test/helpers/e2e-cleanup";
 
 export type SeededAdmin = {
   admin: Admin;
@@ -23,6 +24,7 @@ export async function seedAdmin(prisma: PrismaService): Promise<SeededAdmin> {
       isActive: true,
     },
   });
+  trackAdmin(admin.id);
 
   return { admin, email, password };
 }
@@ -31,8 +33,5 @@ export async function cleanupAdmin(
   prisma: PrismaService,
   adminId: bigint
 ): Promise<void> {
-  await prisma.authSession.deleteMany({
-    where: { role: "admin", userId: adminId },
-  });
-  await prisma.admin.delete({ where: { id: adminId } });
+  await purgeAdmin(prisma, adminId);
 }

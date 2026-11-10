@@ -2,6 +2,7 @@ import { createId } from "@paralleldrive/cuid2";
 import type { Owner, Store } from "@ssurak/db";
 import { PrismaService } from "src/prisma/prisma.service";
 import { encrypt } from "src/utils/lib/crypt";
+import { purgeOwner, trackOwner } from "test/helpers/e2e-cleanup";
 
 export type SeededOwner = {
   owner: Owner;
@@ -35,6 +36,7 @@ export async function seedOwnerWithStores(
     },
     include: { stores: true },
   });
+  trackOwner(owner.id);
 
   const { stores, ...ownerOnly } = owner;
   return { owner: ownerOnly, stores, email, password };
@@ -44,9 +46,5 @@ export async function cleanupOwner(
   prisma: PrismaService,
   ownerId: bigint
 ): Promise<void> {
-  await prisma.store.deleteMany({ where: { ownerId } });
-  await prisma.authSession.deleteMany({
-    where: { role: "owner", userId: ownerId },
-  });
-  await prisma.owner.delete({ where: { id: ownerId } });
+  await purgeOwner(prisma, ownerId);
 }
